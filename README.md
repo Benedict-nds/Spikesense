@@ -2,7 +2,7 @@
 
 A comprehensive mobile application that detects digital overstimulation in students through intelligent pattern recognition, providing gentle nudges and personalized wellness insights.
 
-## 🎯 Overview
+##  Overview
 
 SpikeSense is a production-ready digital wellness platform that goes beyond simple screen time tracking. It uses intelligent pattern detection to identify cognitive overload through:
 
@@ -11,34 +11,34 @@ SpikeSense is a production-ready digital wellness platform that goes beyond simp
 - **Application category classification** (productivity, social, entertainment, etc.)
 - **Adaptive AI-powered threshold learning**
 
-## ✨ Key Features
+## Key Features
 
-### 🧠 Intelligent Detection
+###  Intelligent Detection
 - Rule-based baseline model for immediate pattern detection
 - Optional lightweight ML model for personalized threshold learning
 - Real-time overstimulation pattern recognition
 - Context-aware cognitive load assessment
 
-### 💡 Gentle Nudging System
+###  Gentle Nudging System
 - **Supportive Mode**: Educational insights and awareness
 - **Motivational Mode**: Gamification with badges, streaks, and challenges
 - **Restrictive Mode**: Optional focus sessions and boundaries
 - **Balanced Mode**: Combination of all approaches
 
-### 📊 Comprehensive Dashboard
+###  Comprehensive Dashboard
 - Daily and weekly usage statistics
 - Category-based breakdown (productivity, social, entertainment)
 - Focus score calculation
 - App switching frequency visualization
 - Trend analysis and insights
 
-### 🔒 Privacy-First
+###  Privacy-First
 - Local data storage with optional cloud sync
 - No data sharing with third parties
 - User-controlled data retention
 - Transparent privacy policies
 
-## 🏗️ Architecture
+##  Architecture
 
 ### Frontend (React Native + Expo)
 - Cross-platform mobile app (iOS, Android, Web)
@@ -86,7 +86,7 @@ SpikeSense/
 └── docs/                  # Documentation
 ```
 
-## 🚀 Quick Start
+##  Quick Start
 
 ### Prerequisites
 - Node.js 18+
@@ -181,7 +181,7 @@ FLASK_ENV=development
 PORT=5000
 ```
 
-## 🧪 Testing
+##  Testing
 
 ```bash
 # Backend tests
@@ -192,7 +192,7 @@ pytest tests/
 npm test
 ```
 
-## 📦 Building for Production
+##  Building for Production
 
 ### Android
 ```bash
@@ -209,27 +209,27 @@ eas build --platform ios
 gunicorn -w 4 -b 0.0.0.0:5000 app:app
 ```
 
-## 🤝 Contributing
+##  Contributing
 
 Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
-## 📄 License
+##  License
 
 This project is licensed under the MIT License - see [LICENSE](LICENSE) for details.
 
-## 🙏 Acknowledgments
+##  Acknowledgments
 
 - Built with [Expo](https://expo.dev/) and [React Native](https://reactnative.dev/)
 - Backend powered by [Flask](https://flask.palletsprojects.com/)
 - Database: [PostgreSQL](https://www.postgresql.org/)
 
-## 📞 Support
+##  Support
 
 For issues, questions, or contributions:
 - Open an issue on GitHub
 - Contact: support@spikesense.app
 
-## 🔮 Roadmap
+##  Roadmap
 
 - [ ] Native Android app usage tracking module
 - [ ] iOS Screen Time API integration
@@ -241,5 +241,5 @@ For issues, questions, or contributions:
 
 ---
 
-**Built with ❤️ for student wellness**
+
 
