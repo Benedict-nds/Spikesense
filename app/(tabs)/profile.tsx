@@ -1,10 +1,9 @@
-
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Platform, Switch, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { IconSymbol } from '@/components/IconSymbol';
-import { colors } from '@/styles/commonStyles';
-import { useAppUsageTracking } from '@/hooks/useAppUsageTracking';
+import { IconSymbol } from '../../components/IconSymbol';
+import { colors } from '../../styles/commonStyles';
+import { useAppUsageTracking } from '../../hooks/useAppUsageTracking';
 import { SpikeSenseMode } from '@/types/appUsage';
 
 export default function ProfileScreen() {
@@ -201,6 +200,21 @@ export default function ProfileScreen() {
                     <Text style={styles.featureText}>Cooldown screens</Text>
                   </View>
                 )}
+              </View>
+            </View>
+          )}
+
+          {modeConfig.mode === 'balanced' && (
+            <View style={styles.featureCard}>
+              <View style={styles.featureHeader}>
+                <IconSymbol name="scale.3d" size={20} color={colors.primary} />
+                <Text style={styles.featureTitle}>Balanced Features</Text>
+              </View>
+              <View style={styles.featureList}>
+                <View style={styles.featureItem}>
+                  <IconSymbol name="checkmark.circle.fill" size={16} color={colors.secondary} />
+                  <Text style={styles.featureText}>Awareness, motivation, and light restrictions</Text>
+                </View>
               </View>
             </View>
           )}

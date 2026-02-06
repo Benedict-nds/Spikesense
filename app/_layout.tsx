@@ -6,6 +6,7 @@ import * as SplashScreen from "expo-splash-screen";
 import { SystemBars } from "react-native-edge-to-edge";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { useColorScheme, Alert } from "react-native";
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNetworkState } from "expo-network";
 import {
   DarkTheme,
@@ -43,8 +44,16 @@ export default function RootLayout() {
       networkState.isInternetReachable === false
     ) {
       Alert.alert(
-        "🔌 You are offline",
-        "You can keep using the app! Your changes will be saved locally and synced when you are back online."
+        "You are offline",
+        undefined,
+        [
+          {
+            text: "",
+            style: "default",
+            onPress: () => {},
+            icon: <MaterialCommunityIcons name="power-plug-off" size={24} color="gray" />,
+          },
+        ],
       );
     }
   }, [networkState.isConnected, networkState.isInternetReachable]);

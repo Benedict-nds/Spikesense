@@ -5,7 +5,6 @@ Flask-based RESTful API for digital wellness tracking
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, timedelta
 import os
 from dotenv import load_dotenv
@@ -17,10 +16,7 @@ from utils.validators import validate_app_usage_data
 load_dotenv()
 
 app = Flask(__name__)
-app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv(
-    'DATABASE_URL', 
-    'postgresql://spikesense:spikesense@localhost/spikesense_db'
-)
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///spikesense.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
 
@@ -35,7 +31,7 @@ try:
     pattern_detector = PatternDetector()
     nudge_engine = NudgeEngine()
     AI_ENABLED = True
-except (ImportError, OSError, Exception) as e:
+except (ImportError, OSError, Exception):
     # If numpy/scikit-learn cause segfaults or import errors, disable AI features
     pattern_detector = None
     nudge_engine = None
@@ -195,7 +191,6 @@ def log_app_switch(user_id):
     """Log an app switch event"""
     try:
         data = request.json
-        timestamp = datetime.fromisoformat(data.get('timestamp', datetime.utcnow().isoformat()))
         
         # Get app switches in the last hour
         one_hour_ago = datetime.utcnow() - timedelta(hours=1)
@@ -259,7 +254,7 @@ def get_pending_nudges(user_id):
     """Get pending nudges for a user"""
     nudges = Nudge.query.filter(
         Nudge.user_id == user_id,
-        Nudge.dismissed == False,
+        not Nudge.dismissed,
         Nudge.created_at >= datetime.utcnow() - timedelta(hours=24)
     ).order_by(Nudge.created_at.desc()).all()
     

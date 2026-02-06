@@ -18,6 +18,7 @@ const MAPPING = {
   // Navigation & Home
   "house.fill": "home",
   "house": "home-outlined",
+  "chart.bar": "bar-chart",
   "arrow.left": "arrow-back",
   "arrow.right": "arrow-forward",
   "arrow.up": "arrow-upward",

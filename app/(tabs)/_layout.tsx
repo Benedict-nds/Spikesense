@@ -11,7 +11,7 @@ export default function TabLayout() {
     {
       name: '(home)',
       route: '/(tabs)/(home)/',
-      icon: 'chart.bar.fill',
+      icon: 'chart.bar', // Use MaterialCommunityIcons chart-bar
       label: 'Dashboard',
     },
     {

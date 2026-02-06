@@ -1,5 +1,6 @@
 
 import React, { useState } from 'react';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { ScrollView, View, Text, StyleSheet, Platform, TouchableOpacity } from 'react-native';
 import { Stack } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -222,7 +223,7 @@ export default function HomeScreen() {
                 <Text style={styles.sectionTitle}>Insights</Text>
                 <View style={styles.insightCard}>
                   <View style={styles.insightHeader}>
-                    <Text style={styles.insightIcon}>💡</Text>
+                    <MaterialCommunityIcons name="lightbulb-on" size={22} color={colors.secondary} style={styles.insightIcon} />
                     <Text style={styles.insightTitle}>Understanding Your Habits</Text>
                   </View>
                   <Text style={styles.insightText}>
@@ -240,7 +241,7 @@ export default function HomeScreen() {
                 <Text style={styles.sectionTitle}>Wellness Tips</Text>
                 <View style={styles.tipCard}>
                   <View style={styles.tipHeader}>
-                    <Text style={styles.tipIcon}>📚</Text>
+                    <MaterialCommunityIcons name="book-open-variant" size={22} color={colors.primary} style={styles.tipIcon} />
                     <Text style={styles.tipTitle}>Wellness Tip</Text>
                   </View>
                   <Text style={styles.tipText}>
@@ -257,11 +258,27 @@ export default function HomeScreen() {
     }
   };
 
-  const tabs: { id: TabType; label: string; icon: string }[] = [
-    { id: 'overview', label: 'Overview', icon: '📊' },
-    { id: 'progress', label: 'Progress', icon: '📈' },
-    { id: 'achievements', label: 'Achievements', icon: '🏆' },
-    { id: 'insights', label: 'Insights', icon: '💡' },
+  const tabs: { id: TabType; label: string; icon: React.ReactNode }[] = [
+    {
+      id: 'overview',
+      label: 'Overview',
+      icon: <MaterialCommunityIcons name="chart-bar" size={20} color={colors.primary} />,
+    },
+    {
+      id: 'progress',
+      label: 'Progress',
+      icon: <MaterialCommunityIcons name="chart-line" size={20} color={colors.primary} />,
+    },
+    {
+      id: 'achievements',
+      label: 'Achievements',
+      icon: <MaterialCommunityIcons name="trophy" size={20} color={colors.accent} />,
+    },
+    {
+      id: 'insights',
+      label: 'Insights',
+      icon: <MaterialCommunityIcons name="lightbulb-on" size={20} color={colors.secondary} />,
+    },
   ];
 
   return (
@@ -290,7 +307,7 @@ export default function HomeScreen() {
                 ]}
                 onPress={() => setActiveTab(tab.id)}
               >
-                <Text style={styles.tabIcon}>{tab.icon}</Text>
+                <View style={styles.tabIcon}>{tab.icon}</View>
                 <Text style={[
                   styles.tabLabel,
                   activeTab === tab.id && styles.tabLabelActive

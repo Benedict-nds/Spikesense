@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { IconSymbol } from './IconSymbol';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { colors } from '@/styles/commonStyles';
 import { Badge } from '@/types/appUsage';
 
@@ -12,13 +12,34 @@ interface BadgeCardProps {
 export default function BadgeCard({ badge }: BadgeCardProps) {
   const isEarned = badge.earnedAt !== null;
 
+  // Choose icon based on badge name
+  let iconName = 'star';
+  switch (badge.name) {
+    case 'Early Bird':
+      iconName = 'weather-sunset-up';
+      break;
+    case 'Calm Streak':
+      iconName = 'leaf';
+      break;
+    case 'Balanced Day':
+      iconName = 'scale-balance';
+      break;
+    case 'Steady Focus':
+      iconName = 'target';
+      break;
+    case 'Focus Master':
+      iconName = 'trophy';
+      break;
+    default:
+      iconName = 'star';
+  }
   return (
     <View style={[styles.container, !isEarned && styles.containerLocked]}>
       <View style={[styles.iconContainer, !isEarned && styles.iconContainerLocked]}>
-        <IconSymbol 
-          name={badge.icon as any} 
-          size={32} 
-          color={isEarned ? colors.primary : colors.textSecondary} 
+        <MaterialCommunityIcons
+          name={iconName}
+          size={32}
+          color={isEarned ? colors.primary : colors.textSecondary}
         />
       </View>
       <Text style={[styles.name, !isEarned && styles.nameLocked]}>{badge.name}</Text>

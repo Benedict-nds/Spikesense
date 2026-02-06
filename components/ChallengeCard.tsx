@@ -1,5 +1,6 @@
 
 import React from 'react';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { View, Text, StyleSheet } from 'react-native';
 import { IconSymbol } from './IconSymbol';
 import { colors } from '@/styles/commonStyles';
@@ -16,13 +17,13 @@ export default function ChallengeCard({ challenge }: ChallengeCardProps) {
   const getIcon = () => {
     switch (challenge.type) {
       case 'app_switches':
-        return 'arrow.triangle.swap';
+        return { name: 'target', color: colors.primary };
       case 'focus_time':
-        return 'timer';
+        return { name: 'timer', color: colors.primary };
       case 'entertainment_limit':
-        return 'play.circle';
+        return { name: 'play-circle', color: colors.primary };
       default:
-        return 'flag.fill';
+        return { name: 'flag', color: colors.primary };
     }
   };
 
@@ -30,16 +31,19 @@ export default function ChallengeCard({ challenge }: ChallengeCardProps) {
     <View style={[styles.container, isCompleted && styles.containerCompleted]}>
       <View style={styles.header}>
         <View style={styles.iconContainer}>
-          <IconSymbol 
-            name={getIcon() as any} 
-            size={20} 
-            color={isCompleted ? colors.secondary : colors.primary} 
+          <MaterialCommunityIcons 
+            name={getIcon().name} 
+            size={24} 
+            color={getIcon().color} 
           />
         </View>
         <View style={styles.headerText}>
           <Text style={styles.title}>{challenge.title}</Text>
           {challenge.reward && (
-            <Text style={styles.reward}>🏆 {challenge.reward}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <MaterialCommunityIcons name="trophy" size={18} color={colors.secondary} style={{ marginRight: 4 }} />
+              <Text style={styles.reward}>{challenge.reward}</Text>
+            </View>
           )}
         </View>
       </View>

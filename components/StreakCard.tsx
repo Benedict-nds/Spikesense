@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { IconSymbol } from './IconSymbol';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { colors } from '@/styles/commonStyles';
 import { Streak } from '@/types/appUsage';
 
@@ -13,13 +13,13 @@ export default function StreakCard({ streak }: StreakCardProps) {
   const getStreakIcon = () => {
     switch (streak.type) {
       case 'focus':
-        return 'flame.fill';
+        return 'fire';
       case 'low_switching':
         return 'target';
       case 'balanced_usage':
-        return 'scale.3d';
+        return 'scale-balance';
       default:
-        return 'star.fill';
+        return 'star';
     }
   };
 
@@ -38,8 +38,8 @@ export default function StreakCard({ streak }: StreakCardProps) {
 
   return (
     <View style={styles.container}>
-      <View style={styles.iconContainer}>
-        <IconSymbol name={getStreakIcon() as any} size={24} color={colors.accent} />
+      <View style={styles.iconCircle}>
+        <MaterialCommunityIcons name={getStreakIcon()} size={28} color={colors.accent} />
       </View>
       <View style={styles.content}>
         <Text style={styles.title}>{getStreakTitle()}</Text>
@@ -70,11 +70,11 @@ const styles = StyleSheet.create({
     boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.08)',
     elevation: 2,
   },
-  iconContainer: {
+  iconCircle: {
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: colors.accent + '20',
+    backgroundColor: colors.highlight,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
