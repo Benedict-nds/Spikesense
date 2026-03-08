@@ -108,6 +108,19 @@ backend/
 
 Update `DATABASE_URL` in `.env` to use PostgreSQL.
 
+**Schema changes (no migrations):** This project does not use Flask-Migrate/Alembic. After changing model definitions (e.g. column types), the database must be updated manually:
+
+- **SQLite:** Delete the database file (e.g. `spikesense_dev.sqlite`) and run `python -c "from app import app, db; app.app_context().push(); db.create_all()"` to recreate tables.
+- **PostgreSQL (local dev):** Simplest is to drop all tables and let the app recreate them with the current models (e.g. after changing `user_id` to BigInteger):
+  ```sql
+  DROP TABLE IF EXISTS daily_stats;
+  DROP TABLE IF EXISTS user_thresholds;
+  DROP TABLE IF EXISTS nudges;
+  DROP TABLE IF EXISTS app_usage;
+  DROP TABLE IF EXISTS users;
+  ```
+  Then run `python -c "from app import app, db; app.app_context().push(); db.create_all()"` (or start the server; it runs `db.create_all()` on startup).
+
 ### Debug Mode
 
 ```python

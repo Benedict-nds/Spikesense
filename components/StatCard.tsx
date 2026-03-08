@@ -1,8 +1,10 @@
-
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
+import Animated, { FadeInDown, Easing } from 'react-native-reanimated';
 import { IconSymbol } from './IconSymbol';
 import { colors } from '@/styles/commonStyles';
+
+const SOFT_EASE = Easing.bezier(0.25, 0.1, 0.25, 1);
 
 interface StatCardProps {
   icon: string;
@@ -10,11 +12,15 @@ interface StatCardProps {
   value: string;
   color: string;
   subtitle?: string;
+  index?: number;
 }
 
-export default function StatCard({ icon, label, value, color, subtitle }: StatCardProps) {
+export default function StatCard({ icon, label, value, color, subtitle, index = 0 }: StatCardProps) {
   return (
-    <View style={styles.container}>
+    <Animated.View
+      entering={FadeInDown.duration(220).delay(index * 50).easing(SOFT_EASE)}
+      style={styles.container}
+    >
       <View style={[styles.iconContainer, { backgroundColor: color + '20' }]}>
         <IconSymbol name={icon} size={28} color={color} />
       </View>
@@ -23,7 +29,7 @@ export default function StatCard({ icon, label, value, color, subtitle }: StatCa
         <Text style={styles.value}>{value}</Text>
         {subtitle && <Text style={styles.subtitle}>{subtitle}</Text>}
       </View>
-    </View>
+    </Animated.View>
   );
 }
 

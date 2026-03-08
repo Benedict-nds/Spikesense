@@ -11,8 +11,19 @@ const CHART_HEIGHT = 150;
 const CHART_WIDTH = Dimensions.get('window').width - 64;
 
 export default function WeeklyChart({ data }: WeeklyChartProps) {
-  const maxScreenTime = Math.max(...data.map(d => d.screenTime));
   const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const hasData = data && data.length > 0;
+  const hasMeaningfulData = hasData && data.some(d => (d.screenTime || 0) > 0);
+  const maxScreenTime = hasMeaningfulData ? Math.max(1, ...data.map(d => d.screenTime || 0)) : 1;
+
+  if (!hasData || !hasMeaningfulData) {
+    return (
+      <View style={styles.container}>
+        <Text style={styles.title}>Weekly Screen Time</Text>
+        <Text style={styles.emptyText}>No data yet</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -20,7 +31,7 @@ export default function WeeklyChart({ data }: WeeklyChartProps) {
       <View style={styles.chartContainer}>
         <View style={styles.chart}>
           {data.map((item, index) => {
-            const height = (item.screenTime / maxScreenTime) * CHART_HEIGHT;
+            const height = maxScreenTime > 0 ? (item.screenTime / maxScreenTime) * CHART_HEIGHT : 0;
             const date = new Date(item.date);
             const dayName = days[date.getDay()];
             
@@ -61,6 +72,10 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: colors.text,
     marginBottom: 16,
+  },
+  emptyText: {
+    fontSize: 14,
+    color: colors.textSecondary,
   },
   chartContainer: {
     height: CHART_HEIGHT + 30,

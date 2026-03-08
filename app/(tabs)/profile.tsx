@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Platform, Switch, Pressable } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { View, Text, StyleSheet, ScrollView, Platform, Switch, Pressable, ImageBackground } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { IconSymbol } from '@/components/IconSymbol';
 import { colors } from '@/styles/commonStyles';
 import { useAppUsageTracking } from '@/hooks/useAppUsageTracking';
@@ -10,6 +10,7 @@ import { SpikeSenseMode } from '@/types/appUsage';
 export default function ProfileScreen() {
   const { nudgeConfig, updateNudgeConfig, modeConfig, setMode } = useAppUsageTracking();
   const [localConfig, setLocalConfig] = useState(nudgeConfig);
+  const insets = useSafeAreaInsets();
 
   const handleToggle = (key: keyof typeof nudgeConfig) => {
     const newValue = !localConfig[key];
@@ -50,11 +51,19 @@ export default function ProfileScreen() {
   const modes: SpikeSenseMode[] = ['supportive', 'motivational', 'restrictive', 'balanced'];
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
+    <ImageBackground 
+      source={require('@/assets/images/spikewall4.jpeg')}
+      style={styles.backgroundImage}
+      resizeMode="cover"
+    >
+      {/* Dark Overlay for Readability */}
+      <View style={styles.overlay} />
+      
       <ScrollView
         style={styles.container}
         contentContainerStyle={[
           styles.contentContainer,
+          { paddingTop: insets.top + 16 },
           Platform.OS !== 'ios' && styles.contentContainerWithTabBar,
         ]}
       >
@@ -298,14 +307,19 @@ export default function ProfileScreen() {
           </Text>
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </ImageBackground>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
+  backgroundImage: {
     flex: 1,
-    backgroundColor: colors.background,
+    width: '100%',
+    height: '100%',
+  },
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
   },
   container: {
     flex: 1,
@@ -326,12 +340,18 @@ const styles = StyleSheet.create({
   name: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: colors.text,
+    color: '#FFFFFF',
     marginBottom: 4,
+    textShadowColor: 'rgba(0, 0, 0, 0.5)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
   email: {
     fontSize: 16,
-    color: colors.textSecondary,
+    color: 'rgba(255, 255, 255, 0.9)',
+    textShadowColor: 'rgba(0, 0, 0, 0.5)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
   },
   section: {
     marginBottom: 24,
@@ -339,17 +359,23 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: colors.text,
+    color: 'rgba(255, 255, 255, 0.95)',
     marginBottom: 8,
+    textShadowColor: 'rgba(0, 0, 0, 0.5)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
   sectionDescription: {
     fontSize: 14,
-    color: colors.textSecondary,
+    color: 'rgba(255, 255, 255, 0.85)',
     marginBottom: 16,
     lineHeight: 20,
+    textShadowColor: 'rgba(0, 0, 0, 0.5)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
   },
   modeCard: {
-    backgroundColor: colors.card,
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
     borderRadius: 12,
     padding: 16,
     marginBottom: 12,
@@ -407,7 +433,7 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   featureCard: {
-    backgroundColor: colors.card,
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
     borderRadius: 12,
     padding: 16,
     marginBottom: 12,
@@ -438,7 +464,7 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
   settingCard: {
-    backgroundColor: colors.card,
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
     borderRadius: 12,
     padding: 16,
     marginBottom: 12,
@@ -483,7 +509,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   aboutCard: {
-    backgroundColor: colors.card,
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
     borderRadius: 12,
     padding: 16,
     boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.08)',
@@ -496,7 +522,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   privacyNotice: {
-    backgroundColor: colors.highlight,
+    backgroundColor: 'rgba(235, 244, 255, 0.95)',
     borderRadius: 12,
     padding: 16,
     flexDirection: 'row',

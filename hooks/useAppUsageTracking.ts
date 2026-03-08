@@ -1,25 +1,20 @@
-
 import { useState, useEffect, useCallback } from 'react';
-import { AppState, Platform } from 'react-native';
-import { 
-  DailyStats, 
-  Nudge, 
-  NudgeConfig, 
-  ModeConfig, 
-  Badge, 
-  Streak, 
+import { AppState } from 'react-native';
+import {
+  DailyStats,
+  Nudge,
+  NudgeConfig,
+  ModeConfig,
+  Badge,
+  Streak,
   Challenge,
   FocusSession,
-  SpikeSenseMode
+  SpikeSenseMode,
 } from '@/types/appUsage';
 import { apiService } from '@/services/api';
 import { appUsageTracker } from '@/services/appUsageTracker';
-import { 
-  generateMockData, 
-  generateMockBadges, 
-  generateMockStreaks,
-  generateMockChallenges 
-} from '@/utils/mockDataGenerator';
+
+export type WeeklyChartData = Array<{ date: string; screenTime: number; appSwitches: number }>;
 
 export function useAppUsageTracking() {
   const [dailyStats, setDailyStats] = useState<DailyStats | null>(null);
@@ -27,8 +22,11 @@ export function useAppUsageTracking() {
   const [badges, setBadges] = useState<Badge[]>([]);
   const [streaks, setStreaks] = useState<Streak[]>([]);
   const [challenges, setChallenges] = useState<Challenge[]>([]);
+  const [weeklyData, setWeeklyData] = useState<WeeklyChartData>([]);
   const [focusSession, setFocusSession] = useState<FocusSession | null>(null);
   const [userId, setUserId] = useState<number | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [isInitialized, setIsInitialized] = useState(false);
   
   const [nudgeConfig, setNudgeConfig] = useState<NudgeConfig>({
@@ -61,111 +59,130 @@ export function useAppUsageTracking() {
     },
   });
 
-  // Initialize tracking and fetch data
-  useEffect(() => {
-    const initialize = async () => {
-      try {
-        // Initialize app usage tracker
-        const trackerInitialized = await appUsageTracker.initialize();
-        if (trackerInitialized) {
-          const trackerUserId = appUsageTracker.getUserId();
-          if (trackerUserId) {
-            setUserId(trackerUserId);
-            
-            // Start tracking
-            await appUsageTracker.startTracking();
-            
-            // Fetch user thresholds
-            const thresholdsResult = await apiService.getUserThresholds(trackerUserId);
-            if (thresholdsResult.success && thresholdsResult.data?.thresholds) {
-              const thresholds = thresholdsResult.data.thresholds;
-              setNudgeConfig(prev => ({
-                ...prev,
-                switchThreshold: thresholds.switch_threshold || prev.switchThreshold,
-                entertainmentThreshold: thresholds.entertainment_threshold || prev.entertainmentThreshold,
-                breakInterval: thresholds.break_interval || prev.breakInterval,
-              }));
-            }
-            
-            // Fetch daily stats
-            await loadDailyStats(trackerUserId);
-            
-            // Fetch pending nudges
-            await loadNudges(trackerUserId);
-          }
+  const loadWeeklyStats = useCallback(async (uid: number) => {
+    try {
+      const weekData: WeeklyChartData = [];
+      const today = new Date();
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date(today);
+        d.setDate(d.getDate() - i);
+        const dateStr = d.toISOString().split('T')[0];
+        const result = await apiService.getDailyStats(uid, dateStr);
+        if (result.success && result.data?.stats) {
+          const s = result.data.stats;
+          weekData.push({
+            date: dateStr,
+            screenTime: s.total_screen_time ?? 0,
+            appSwitches: s.app_switches ?? 0,
+          });
+        } else {
+          weekData.push({ date: dateStr, screenTime: 0, appSwitches: 0 });
         }
-        
-        // Fallback to mock data if backend unavailable
-        if (!userId) {
-          const mockData = generateMockData();
-          setDailyStats(mockData);
-          setBadges(generateMockBadges());
-          setStreaks(generateMockStreaks());
-          setChallenges(generateMockChallenges());
-        }
-        
-        setIsInitialized(true);
-      } catch (error) {
-        console.error('Failed to initialize tracking:', error);
-        // Fallback to mock data
-        const mockData = generateMockData();
-        setDailyStats(mockData);
-        setBadges(generateMockBadges());
-        setStreaks(generateMockStreaks());
-        setChallenges(generateMockChallenges());
-        setIsInitialized(true);
       }
-    };
+      setWeeklyData(weekData);
+    } catch (err) {
+      if (__DEV__) console.warn('[useAppUsageTracking] loadWeeklyStats failed:', err);
+      setWeeklyData([]);
+    }
+  }, []);
 
+  const initialize = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const trackerInitialized = await appUsageTracker.initialize();
+      const trackerUserId = trackerInitialized ? appUsageTracker.getUserId() : null;
+
+      if (trackerUserId) {
+        setUserId(trackerUserId);
+        await appUsageTracker.startTracking();
+
+        const thresholdsResult = await apiService.getUserThresholds(trackerUserId);
+        if (thresholdsResult.success && thresholdsResult.data?.thresholds) {
+          const thresholds = thresholdsResult.data.thresholds;
+          setNudgeConfig(prev => ({
+            ...prev,
+            switchThreshold: thresholds.switch_threshold ?? prev.switchThreshold,
+            entertainmentThreshold: thresholds.entertainment_threshold ?? prev.entertainmentThreshold,
+            breakInterval: thresholds.break_interval ?? prev.breakInterval,
+          }));
+        }
+
+        await loadDailyStats(trackerUserId);
+        await loadNudges(trackerUserId);
+        await loadWeeklyStats(trackerUserId);
+      } else {
+        setError('Unable to connect to backend.');
+      }
+    } catch (err) {
+      if (__DEV__) console.warn('[useAppUsageTracking] initialize failed:', err);
+      setError('Unable to load data.');
+    } finally {
+      setLoading(false);
+      setIsInitialized(true);
+    }
+  }, [loadDailyStats, loadNudges, loadWeeklyStats]);
+
+  useEffect(() => {
     initialize();
-
     return () => {
       appUsageTracker.stopTracking();
     };
-  }, []);
+  }, [initialize]);
 
-  const loadDailyStats = async (uid: number) => {
+  const loadDailyStats = useCallback(async (uid: number) => {
     try {
+      await appUsageTracker.flushUsageToBackend();
       const result = await apiService.getDailyStats(uid);
       if (result.success && result.data?.stats) {
         const stats = result.data.stats;
+
+        const toNumber = (value: unknown): number => {
+          const n = Number(value);
+          return Number.isFinite(n) ? n : 0;
+        };
+
         setDailyStats({
           date: stats.date,
-          totalScreenTime: stats.total_screen_time,
-          appSwitches: stats.app_switches,
-          productivityTime: stats.productivity_time,
-          socialTime: stats.social_time,
-          entertainmentTime: stats.entertainment_time,
-          otherTime: stats.other_time,
-          apps: [], // Would need separate endpoint for app list
-          focusTime: stats.focus_time || 0,
-          focusScore: stats.focus_score || 0,
+          totalScreenTime: toNumber(stats.total_screen_time),
+          appSwitches: toNumber(stats.app_switches),
+          productivityTime: toNumber(stats.productivity_time),
+          socialTime: toNumber(stats.social_time),
+          entertainmentTime: toNumber(stats.entertainment_time),
+          otherTime: toNumber(stats.other_time),
+          apps: [],
+          focusTime: stats.focus_time ?? 0,
+          focusScore: stats.focus_score ?? 0,
         });
+        setError(null);
+      } else {
+        setError('Unable to load data.');
       }
-    } catch (error) {
-      console.error('Failed to load daily stats:', error);
+    } catch (err) {
+      if (__DEV__) console.warn('[useAppUsageTracking] loadDailyStats failed:', err);
+      setError('Unable to load data.');
     }
-  };
+  }, []);
 
-  const loadNudges = async (uid: number) => {
+  const loadNudges = useCallback(async (uid: number) => {
     try {
       const result = await apiService.getPendingNudges(uid);
       if (result.success && result.data?.nudges) {
-        const backendNudges = result.data.nudges.map((n: any) => ({
+        const backendNudges = result.data.nudges.map((n: { id: number; type: string; message: string; created_at: string; action_label?: string; action_type?: string }) => ({
           id: n.id.toString(),
           type: n.type,
           message: n.message,
           timestamp: new Date(n.created_at),
-          dismissed: n.dismissed,
+          dismissed: false,
           actionLabel: n.action_label,
           actionType: n.action_type,
         }));
         setNudges(backendNudges);
       }
-    } catch (error) {
-      console.error('Failed to load nudges:', error);
+    } catch (err) {
+      if (__DEV__) console.warn('[useAppUsageTracking] loadNudges failed:', err);
     }
-  };
+  }, []);
 
   // Monitor app state changes to detect app switches
   useEffect(() => {
@@ -511,8 +528,12 @@ export function useAppUsageTracking() {
     badges,
     streaks,
     challenges,
+    weeklyData,
     focusSession,
+    loading,
+    error,
     isInitialized,
+    retry: initialize,
     dismissNudge,
     updateNudgeConfig,
     updateModeConfig,

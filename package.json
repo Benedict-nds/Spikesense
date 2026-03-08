@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "main": "index.ts",
   "scripts": {
-    "dev": "EXPO_NO_TELEMETRY=1 expo start --tunnel",
+    "dev": "EXPO_NO_TELEMETRY=1 expo start --tunnel --go",
+    "dev:lan": "EXPO_NO_TELEMETRY=1 expo start --go",
     "android": "EXPO_NO_TELEMETRY=1 expo start --android",
     "ios": "EXPO_NO_TELEMETRY=1 expo start --ios",
     "web": "EXPO_NO_TELEMETRY=1 expo start --web",
@@ -18,6 +19,7 @@
     "@expo/metro-runtime": "~6.1.1",
     "@expo/ngrok": "^4.1.3",
     "@expo/vector-icons": "^15.0.2",
+    "@react-native-async-storage/async-storage": "^1.23.1",
     "@react-native-community/datetimepicker": "^8.3.0",
     "@react-navigation/drawer": "^7.1.1",
     "@react-navigation/native": "^7.0.14",
@@ -28,6 +30,8 @@
     "expo": "~54.0.1",
     "expo-blur": "^15.0.6",
     "expo-constants": "~18.0.8",
+    "expo-dev-client": "~6.0.20",
+    "expo-device": "~6.0.2",
     "expo-font": "^14.0.7",
     "expo-glass-effect": "^0.1.1",
     "expo-haptics": "^15.0.6",
@@ -59,9 +63,7 @@
     "react-router-dom": "^7.1.3",
     "workbox-cli": "^7.3.0",
     "workbox-precaching": "^7.3.0",
-    "workbox-webpack-plugin": "^7.3.0",
-    "@react-native-async-storage/async-storage": "^1.23.1",
-    "expo-device": "~6.0.2"
+    "workbox-webpack-plugin": "^7.3.0"
   },
   "devDependencies": {
     "@babel/core": "^7.20.0",

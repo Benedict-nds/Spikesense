@@ -1,15 +1,18 @@
-
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
+import Animated, { FadeInDown, Easing } from 'react-native-reanimated';
 import { IconSymbol } from './IconSymbol';
 import { colors } from '@/styles/commonStyles';
 import { Challenge } from '@/types/appUsage';
 
+const SOFT_EASE = Easing.bezier(0.25, 0.1, 0.25, 1);
+
 interface ChallengeCardProps {
   challenge: Challenge;
+  index?: number;
 }
 
-export default function ChallengeCard({ challenge }: ChallengeCardProps) {
+export default function ChallengeCard({ challenge, index = 0 }: ChallengeCardProps) {
   const progress = Math.min(100, (challenge.current / challenge.target) * 100);
   const isCompleted = challenge.completed || progress >= 100;
 
@@ -27,7 +30,10 @@ export default function ChallengeCard({ challenge }: ChallengeCardProps) {
   };
 
   return (
-    <View style={[styles.container, isCompleted && styles.containerCompleted]}>
+    <Animated.View
+      entering={FadeInDown.duration(220).delay(index * 50).easing(SOFT_EASE)}
+      style={[styles.container, isCompleted && styles.containerCompleted]}
+    >
       <View style={styles.header}>
         <View style={styles.iconContainer}>
           <IconSymbol 
@@ -61,7 +67,7 @@ export default function ChallengeCard({ challenge }: ChallengeCardProps) {
           <Text style={styles.completedText}>Completed!</Text>
         </View>
       )}
-    </View>
+    </Animated.View>
   );
 }
 

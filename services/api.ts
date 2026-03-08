@@ -3,9 +3,14 @@
  * Handles all HTTP requests to the Flask backend
  */
 
-const API_BASE_URL = __DEV__ 
-  ? 'http://localhost:5000/api' 
-  : 'https://your-production-api.com/api';
+import { getApiBaseUrl } from '@/constants/api';
+
+const API_BASE_URL = getApiBaseUrl();
+
+// Debug log at startup
+if (__DEV__) {
+  console.log('API base URL:', API_BASE_URL);
+}
 
 interface ApiResponse<T> {
   success: boolean;
@@ -14,10 +19,54 @@ interface ApiResponse<T> {
 }
 
 class ApiService {
+  private backendReachable: boolean | null = null;
+
+  /**
+   * Check if backend is reachable by calling GET /api/health
+   * Must be called before any other API calls.
+   */
+  async checkHealth(): Promise<boolean> {
+    if (this.backendReachable === false) {
+      return false;
+    }
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/health`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      const isHealthy = response.ok;
+      this.backendReachable = isHealthy;
+
+      if (!isHealthy && __DEV__) {
+        console.warn('[API] Health check failed:', response.status);
+      }
+
+      return isHealthy;
+    } catch (error) {
+      this.backendReachable = false;
+      if (__DEV__) {
+        console.log('Backend not reachable');
+        console.warn('[API] Health check error:', error instanceof Error ? error.message : error);
+      }
+      return false;
+    }
+  }
+
   private async request<T>(
     endpoint: string,
     options: RequestInit = {}
   ): Promise<ApiResponse<T>> {
+    if (this.backendReachable === false) {
+      return {
+        success: false,
+        error: 'Backend not reachable',
+      };
+    }
+
     try {
       const response = await fetch(`${API_BASE_URL}${endpoint}`, {
         ...options,
@@ -30,6 +79,9 @@ class ApiService {
       const data = await response.json();
 
       if (!response.ok) {
+        if (__DEV__) {
+          console.warn('[API] Request failed:', endpoint, response.status, data?.error ?? data);
+        }
         return {
           success: false,
           error: data.error || `HTTP ${response.status}`,
@@ -41,6 +93,9 @@ class ApiService {
         data: data,
       };
     } catch (error) {
+      if (__DEV__) {
+        console.warn('[API] Request error:', endpoint, error instanceof Error ? error.message : error);
+      }
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Network error',
@@ -48,20 +103,12 @@ class ApiService {
     }
   }
 
-  // User endpoints
-  async createUser(deviceId: string, name?: string, email?: string) {
-    return this.request('/users', {
+  // User bootstrap: POST /api/users with { device_id }, returns user_id. Do not use GET /users.
+  async bootstrapUser(deviceId: string) {
+    return this.request<{ user_id: number }>('/users', {
       method: 'POST',
-      body: JSON.stringify({
-        device_id: deviceId,
-        name: name || 'User',
-        email,
-      }),
+      body: JSON.stringify({ device_id: deviceId }),
     });
-  }
-
-  async getUser(userId: number) {
-    return this.request(`/users/${userId}`);
   }
 
   async updateUserMode(userId: number, mode: string) {
@@ -72,29 +119,18 @@ class ApiService {
   }
 
   // App usage endpoints
-  async logAppUsage(
+  async logEvent(
     userId: number,
     appName: string,
     category: string,
-    durationMinutes: number,
-    timestamp: string
+    durationSeconds: number
   ) {
-    return this.request('/users/' + userId + '/usage', {
+    return this.request(`/users/${userId}/events`, {
       method: 'POST',
       body: JSON.stringify({
         app_name: appName,
-        category,
-        duration_minutes: durationMinutes,
-        timestamp,
-      }),
-    });
-  }
-
-  async logAppSwitch(userId: number, timestamp?: string) {
-    return this.request('/users/' + userId + '/app-switch', {
-      method: 'POST',
-      body: JSON.stringify({
-        timestamp: timestamp || new Date().toISOString(),
+        category: category,
+        duration: durationSeconds
       }),
     });
   }
@@ -139,6 +175,3 @@ class ApiService {
 
 export const apiService = new ApiService();
 export default apiService;
-
-
-

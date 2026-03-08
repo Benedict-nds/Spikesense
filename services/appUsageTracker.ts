@@ -15,7 +15,7 @@ import { apiService } from './api';
 interface AppUsageEvent {
   appName: string;
   category: 'productivity' | 'social' | 'entertainment' | 'other';
-  durationMinutes: number;
+  durationSeconds: number;
   timestamp: string;
 }
 
@@ -71,32 +71,49 @@ class AppUsageTracker {
   private appStartTime: Date | null = null;
   private lastSwitchTime: Date | null = null;
   private usageBuffer: AppUsageEvent[] = [];
-  private syncInterval: NodeJS.Timeout | null = null;
+  private syncInterval: ReturnType<typeof setInterval> | null = null;
 
   async initialize(): Promise<boolean> {
     try {
-      // Get or create device ID
       this.deviceId = await this.getDeviceId();
-      
-      // Get or create user
-      const userResult = await apiService.createUser(this.deviceId);
-      if (userResult.success && userResult.data) {
-        // In a real implementation, the API would return user_id
-        // For now, we'll store it locally
+
+      const isHealthy = await apiService.checkHealth();
+      if (!isHealthy) {
         const storedUserId = await AsyncStorage.getItem('userId');
         if (storedUserId) {
-          this.userId = parseInt(storedUserId, 10);
-        } else {
-          // Create new user and store ID
-          // This is a simplified version - real API would return user_id
-          this.userId = Date.now(); // Temporary - should come from API
-          await AsyncStorage.setItem('userId', this.userId.toString());
+          const id = parseInt(storedUserId, 10);
+          if (!Number.isNaN(id)) {
+            this.userId = id;
+            return true;
+          }
         }
+        return false;
       }
 
-      return true;
+      const userResult = await apiService.bootstrapUser(this.deviceId);
+      if (userResult.success && userResult.data?.user_id != null) {
+        this.userId = userResult.data.user_id;
+        await AsyncStorage.setItem('userId', this.userId.toString());
+        return true;
+      }
+
+      const storedUserId = await AsyncStorage.getItem('userId');
+      if (storedUserId) {
+        this.userId = parseInt(storedUserId, 10);
+        if (!Number.isNaN(this.userId)) return true;
+      }
+
+      return false;
     } catch (error) {
       console.error('Failed to initialize app usage tracker:', error);
+      const storedUserId = await AsyncStorage.getItem('userId');
+      if (storedUserId) {
+        const id = parseInt(storedUserId, 10);
+        if (!Number.isNaN(id)) {
+          this.userId = id;
+          return true;
+        }
+      }
       return false;
     }
   }
@@ -131,7 +148,7 @@ class AppUsageTracker {
     this.isTracking = true;
     
     // Start periodic sync
-    this.syncInterval = setInterval(() => {
+    this.syncInterval = window.setInterval(() => {
       this.syncUsageData();
     }, 60000); // Sync every minute
 
@@ -172,67 +189,56 @@ class AppUsageTracker {
   }
 
   async trackAppSwitch(appName: string): Promise<void> {
-    if (!this.userId || !this.isTracking) {
+    if (!this.isTracking) return;
+  
+    const now = new Date();
+  
+    // Ensure we have a valid userId
+    const userId = this.userId;
+    if (!userId || Number.isNaN(userId)) {
+      console.warn('[UsageTracker] Missing userId, skipping app switch log');
       return;
     }
+  
+    try {
+      // Log previous app session immediately to backend
+      if (this.currentApp && this.appStartTime) {
+        const durationMs = now.getTime() - this.appStartTime.getTime();
+        const durationSeconds = Math.floor(durationMs / 1000);
 
-    const now = new Date();
+        // Only record sessions that last at least 1 second
+        if (durationSeconds >= 1) {
+          const category = this.getAppCategory(this.currentApp);
 
-    // Log previous app usage if exists
-    if (this.currentApp && this.appStartTime) {
-      const durationMinutes = (now.getTime() - this.appStartTime.getTime()) / 60000;
-      
-      if (durationMinutes > 0.1) { // Only log if > 6 seconds
-        const category = this.getAppCategory(this.currentApp);
-        const event: AppUsageEvent = {
-          appName: this.currentApp,
-          category,
-          durationMinutes,
-          timestamp: this.appStartTime.toISOString(),
-        };
+          const event: AppUsageEvent = {
+            appName: this.currentApp,
+            category,
+            durationSeconds,
+            timestamp: this.appStartTime.toISOString(),
+          };
 
-        this.usageBuffer.push(event);
+          /**
+           * Fire-and-forget API call
+           * We intentionally DO NOT await to avoid blocking tracking.
+           * On failure, we buffer the event for later sync.
+           */
+          apiService
+            .logEvent(userId, event.appName, event.category, event.durationSeconds)
+            .catch((error) => {
+              console.warn('[UsageTracker] logEvent failed, buffering event:', error?.message);
+              this.usageBuffer.push(event);
+            });
+        }
       }
+    } catch (error: any) {
+      // Catch unexpected errors without crashing the app
+      console.warn('[UsageTracker] trackAppSwitch error:', error?.message);
     }
-
-    // Log app switch to backend
-    if (this.userId) {
-      try {
-        await apiService.logAppSwitch(this.userId, now.toISOString());
-      } catch (error) {
-        console.error('Failed to log app switch:', error);
-      }
-    }
-
-    // Update current app
+  
+    // Update tracker state
     this.currentApp = appName;
     this.appStartTime = now;
     this.lastSwitchTime = now;
-  }
-
-  async trackAppUsage(
-    appName: string,
-    durationMinutes: number,
-    timestamp?: Date
-  ): Promise<void> {
-    if (!this.userId || !this.isTracking) {
-      return;
-    }
-
-    const category = this.getAppCategory(appName);
-    const event: AppUsageEvent = {
-      appName,
-      category,
-      durationMinutes,
-      timestamp: (timestamp || new Date()).toISOString(),
-    };
-
-    this.usageBuffer.push(event);
-
-    // Sync if buffer is large
-    if (this.usageBuffer.length >= 10) {
-      await this.syncUsageData();
-    }
   }
 
   private async syncUsageData(): Promise<void> {
@@ -243,15 +249,14 @@ class AppUsageTracker {
     const eventsToSync = [...this.usageBuffer];
     this.usageBuffer = [];
 
-    // Sync each event to backend
+    // Sync buffered events (previous logEvent failures) to backend
     for (const event of eventsToSync) {
       try {
-        await apiService.logAppUsage(
+        await apiService.logEvent(
           this.userId!,
           event.appName,
           event.category,
-          event.durationMinutes,
-          event.timestamp
+          event.durationSeconds
         );
       } catch (error) {
         console.error('Failed to sync usage data:', error);
@@ -277,6 +282,11 @@ class AppUsageTracker {
 
     // Default to 'other'
     return 'other';
+  }
+
+  /** Flush any buffered usage to the backend so daily stats are up to date. */
+  async flushUsageToBackend(): Promise<void> {
+    await this.syncUsageData();
   }
 
   getUserId(): number | null {

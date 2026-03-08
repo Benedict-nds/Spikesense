@@ -22,6 +22,18 @@ export default function DoughnutChart({
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
   const total = data.reduce((sum, item) => sum + item.value, 0);
+  const centerRadius = radius - strokeWidth / 2 - 10; // Inner radius for background circle
+
+  if (total === 0) {
+    return (
+      <View style={styles.container}>
+        <View style={[styles.emptyChart, { width: size, height: size, borderRadius: size / 2 }]}>
+          <Text style={styles.emptyChartText}>No usage data yet</Text>
+          <Text style={styles.emptyChartSubtext}>Use apps to see breakdown here</Text>
+        </View>
+      </View>
+    );
+  }
 
   let currentAngle = -90; // Start from top
 
@@ -53,9 +65,18 @@ export default function DoughnutChart({
             );
           })}
         </G>
+        {/* Semi-transparent background circle for center text */}
+        {centerText && (
+          <Circle
+            cx={size / 2}
+            cy={size / 2}
+            r={centerRadius}
+            fill="rgba(0, 0, 0, 0.5)"
+          />
+        )}
       </Svg>
       {centerText && (
-        <View style={styles.centerTextContainer}>
+        <View style={[styles.centerTextContainer, { width: size, height: size }]}>
           <Text style={styles.centerText}>{centerText}</Text>
           {centerSubtext && (
             <Text style={styles.centerSubtext}>{centerSubtext}</Text>
@@ -71,6 +92,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  emptyChart: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.2)',
+  },
+  emptyChartText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    textAlign: 'center',
+  },
+  emptyChartSubtext: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    marginTop: 4,
+    textAlign: 'center',
+  },
   centerTextContainer: {
     position: 'absolute',
     alignItems: 'center',
@@ -79,11 +117,17 @@ const styles = StyleSheet.create({
   centerText: {
     fontSize: 32,
     fontWeight: 'bold',
-    color: colors.text,
+    color: '#FFFFFF',
+    textShadowColor: 'rgba(0, 0, 0, 0.75)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 4,
   },
   centerSubtext: {
     fontSize: 14,
-    color: colors.textSecondary,
+    color: 'rgba(255, 255, 255, 0.9)',
     marginTop: 4,
+    textShadowColor: 'rgba(0, 0, 0, 0.75)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
 });

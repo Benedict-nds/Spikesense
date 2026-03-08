@@ -1,15 +1,18 @@
-
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
+import Animated, { FadeInDown, Easing } from 'react-native-reanimated';
 import { IconSymbol } from './IconSymbol';
 import { colors } from '@/styles/commonStyles';
 import { Streak } from '@/types/appUsage';
 
+const SOFT_EASE = Easing.bezier(0.25, 0.1, 0.25, 1);
+
 interface StreakCardProps {
   streak: Streak;
+  index?: number;
 }
 
-export default function StreakCard({ streak }: StreakCardProps) {
+export default function StreakCard({ streak, index = 0 }: StreakCardProps) {
   const getStreakIcon = () => {
     switch (streak.type) {
       case 'focus':
@@ -37,7 +40,10 @@ export default function StreakCard({ streak }: StreakCardProps) {
   };
 
   return (
-    <View style={styles.container}>
+    <Animated.View
+      entering={FadeInDown.duration(220).delay(index * 50).easing(SOFT_EASE)}
+      style={styles.container}
+    >
       <View style={styles.iconContainer}>
         <IconSymbol name={getStreakIcon() as any} size={24} color={colors.accent} />
       </View>
@@ -55,7 +61,7 @@ export default function StreakCard({ streak }: StreakCardProps) {
           </View>
         </View>
       </View>
-    </View>
+    </Animated.View>
   );
 }
 

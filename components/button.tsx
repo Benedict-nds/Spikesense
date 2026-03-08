@@ -1,13 +1,13 @@
 import React from "react";
 import {
   ActivityIndicator,
-  Pressable,
   StyleSheet,
   Text,
   TextStyle,
   useColorScheme,
   ViewStyle,
 } from "react-native";
+import AnimatedPressable from "@/components/AnimatedPressable";
 import { appleBlue, zincColors } from "@/constants/Colors";
 
 type ButtonVariant = "filled" | "outline" | "ghost";
@@ -90,7 +90,7 @@ export const Button: React.FC<ButtonProps> = ({
   };
 
   return (
-    <Pressable
+    <AnimatedPressable
       onPress={onPress}
       disabled={disabled || loading}
       style={[
@@ -121,7 +121,7 @@ export const Button: React.FC<ButtonProps> = ({
           {children}
         </Text>
       )}
-    </Pressable>
+    </AnimatedPressable>
   );
 };
 

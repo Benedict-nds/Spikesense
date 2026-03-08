@@ -1,10 +1,11 @@
-
 import React from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
-import Animated, { FadeInDown, FadeOutUp } from 'react-native-reanimated';
+import Animated, { FadeInDown, FadeOutUp, Easing } from 'react-native-reanimated';
 import { IconSymbol } from './IconSymbol';
 import { colors } from '@/styles/commonStyles';
 import { Nudge } from '@/types/appUsage';
+
+const SOFT_EASE = Easing.bezier(0.25, 0.1, 0.25, 1);
 
 interface NudgeCardProps {
   nudge: Nudge;
@@ -59,8 +60,8 @@ export default function NudgeCard({ nudge, onDismiss }: NudgeCardProps) {
 
   return (
     <Animated.View
-      entering={FadeInDown.duration(300)}
-      exiting={FadeOutUp.duration(200)}
+      entering={FadeInDown.duration(250).easing(SOFT_EASE)}
+      exiting={FadeOutUp.duration(180).easing(SOFT_EASE)}
       style={styles.container}
     >
       <View style={styles.content}>

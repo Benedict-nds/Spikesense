@@ -1,9 +1,13 @@
-
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
+import Animated, { FadeIn, Easing } from 'react-native-reanimated';
 import { IconSymbol } from './IconSymbol';
 import { colors } from '@/styles/commonStyles';
 import { AppUsageData, AppCategory } from '@/types/appUsage';
+
+const SOFT_EASE = Easing.bezier(0.25, 0.1, 0.25, 1);
+const ITEM_DELAY = 50;
+const ITEM_DURATION = 200;
 
 interface AppUsageListProps {
   apps: AppUsageData[];
@@ -51,7 +55,11 @@ export default function AppUsageList({ apps }: AppUsageListProps) {
     <View style={styles.container}>
       <Text style={styles.title}>Top Apps</Text>
       {topApps.map((app, index) => (
-        <View key={index} style={styles.appItem}>
+        <Animated.View
+          key={index}
+          entering={FadeIn.duration(ITEM_DURATION).delay(index * ITEM_DELAY).easing(SOFT_EASE)}
+          style={styles.appItem}
+        >
           <View style={[styles.iconContainer, { backgroundColor: getCategoryColor(app.category) + '20' }]}>
             <IconSymbol name={getCategoryIcon(app.category)} size={20} color={getCategoryColor(app.category)} />
           </View>
@@ -63,7 +71,7 @@ export default function AppUsageList({ apps }: AppUsageListProps) {
             <Text style={styles.usageTime}>{formatTime(app.usageTime)}</Text>
             <Text style={styles.openCount}>{app.openCount} opens</Text>
           </View>
-        </View>
+        </Animated.View>
       ))}
     </View>
   );
