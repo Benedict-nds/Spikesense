@@ -29,9 +29,10 @@ yarn-error.*
 
 .natively/
 
-android/
 android/.gradle/
 android/app/build/
+android/build/
+android/**/build/
 ios/
 
 netlify.toml

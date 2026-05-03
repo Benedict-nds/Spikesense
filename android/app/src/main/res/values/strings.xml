@@ -1,0 +1,10 @@
+<resources>
+  <string name="app_name">Natively</string>
+  <string name="usage_tracking_channel_name">App usage tracking</string>
+  <string name="usage_tracking_channel_desc">Shows while SpikeSense records app usage in the background</string>
+  <string name="usage_tracking_notification_title">SpikeSense</string>
+  <string name="usage_tracking_notification_text">Tracking app usage in the background</string>
+  <string name="expo_splash_screen_resize_mode" translatable="false">contain</string>
+  <string name="expo_splash_screen_status_bar_translucent" translatable="false">false</string>
+  <string name="expo_system_ui_user_interface_style" translatable="false">automatic</string>
+</resources>
