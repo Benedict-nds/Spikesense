@@ -58,8 +58,11 @@ const TopAppRow = memo(function TopAppRow({ app, index }: RowProps) {
   const [iconUri, setIconUri] = useState<string | null>(null);
   const [iconFailed, setIconFailed] = useState(false);
 
-  const rawPkg = (app.packageName ?? '').trim();
-  const pkg = resolvePackageForIconLookup(app.appName, app.packageName);
+  const rawPkg = (app.packageName ?? app.package_name ?? '').trim();
+  const resolvedPkg = resolvePackageForIconLookup(
+    app.appName,
+    app.packageName ?? app.package_name
+  );
   const tint = getCategoryColor(app.category);
 
   useEffect(() => {
@@ -68,50 +71,50 @@ const TopAppRow = memo(function TopAppRow({ app, index }: RowProps) {
     setIconUri(null);
 
     const logRow = (payload: {
-      packageName: string;
-      iconResolved: boolean;
+      hasIcon: boolean;
       fallbackReason: string;
     }) => {
       if (!__DEV__) return;
       console.log('[FRONTEND][APP_ICON_ROW]', {
         appName: app.appName,
-        category: app.category,
-        ...payload,
+        packageName: rawPkg || null,
+        resolvedPackage: resolvedPkg || '',
+        hasIcon: payload.hasIcon,
+        fallbackReason: payload.fallbackReason,
       });
     };
 
-    if (!pkg || Platform.OS !== 'android') {
+    if (!resolvedPkg || Platform.OS !== 'android') {
       logRow({
-        packageName: pkg || rawPkg,
-        iconResolved: false,
-        fallbackReason: !pkg ? 'no_package' : 'non_android',
+        hasIcon: false,
+        fallbackReason: !resolvedPkg ? 'no_package' : 'non_android',
       });
       return;
     }
 
     (async () => {
       try {
-        const uri = await getAppIcon(pkg);
+        const uri = await getAppIcon(resolvedPkg);
         if (cancelled) return;
         if (uri && uri.length > 0) {
           setIconUri(uri);
-          logRow({ packageName: pkg, iconResolved: true, fallbackReason: 'none' });
+          logRow({ hasIcon: true, fallbackReason: 'none' });
         } else {
           setIconUri(null);
-          logRow({ packageName: pkg, iconResolved: false, fallbackReason: 'native_null' });
+          logRow({ hasIcon: false, fallbackReason: 'native_null' });
         }
       } catch {
         if (!cancelled) {
           setIconUri(null);
           setIconFailed(true);
-          logRow({ packageName: pkg, iconResolved: false, fallbackReason: 'load_failed' });
+          logRow({ hasIcon: false, fallbackReason: 'load_failed' });
         }
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [pkg, rawPkg, app.appName, app.category]);
+  }, [resolvedPkg, rawPkg, app.appName, app.category, app.package_name, app.packageName]);
 
   const showRaster = iconUri != null && iconUri.length > 0 && !iconFailed;
 
@@ -185,7 +188,7 @@ export default function AppUsageList({ apps, loading, usagePresentButNoTopApps }
       ) : null}
       {topApps.map((app, index) => (
         <TopAppRow
-          key={`${resolvePackageForIconLookup(app.appName, app.packageName) || 'np'}-${app.appName}-${index}`}
+          key={`${resolvePackageForIconLookup(app.appName, app.packageName ?? app.package_name) || 'np'}-${app.appName}-${index}`}
           app={app}
           index={index}
         />

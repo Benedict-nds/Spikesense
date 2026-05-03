@@ -13,7 +13,8 @@ public class UsageStatsPackage implements ReactPackage {
     public List<NativeModule> createNativeModules(ReactApplicationContext reactContext) {
         return Arrays.<NativeModule>asList(
                 new UsageStatsModule(reactContext),
-                new UsageTrackingModule(reactContext)
+                new UsageTrackingModule(reactContext),
+                new AppIconModule(reactContext)
         );
     }
 

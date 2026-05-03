@@ -11,6 +11,8 @@ export interface AppUsageData {
   lastUsed: Date;
   /** Present when backend aggregates by package (Android real icons). */
   packageName?: string;
+  /** Same as package_name from API when mapped (snake_case alias). */
+  package_name?: string;
 }
 
 export interface DailyStats {

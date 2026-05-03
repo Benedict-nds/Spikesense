@@ -207,5 +207,6 @@ const styles = StyleSheet.create({
   },
   foreground: {
     flex: 1,
+    zIndex: 1,
   },
 });

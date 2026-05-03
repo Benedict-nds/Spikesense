@@ -63,11 +63,57 @@ public final class SpikeSenseNudgeResponseHandler {
             if ("notification".equals(tier)) {
                 postNudgeNotification(ctx, payload);
             } else if ("mini_orb".equals(tier) || "focus_guard".equals(tier)) {
-                SpikeOrbOverlayController.showNudgeOrb(ctx, payload, tier);
+                deliverMiniOrbOverlay(ctx, payload, tier);
             }
         } catch (Exception e) {
             Log.w(TAG, "handleEventsApiResponse", e);
         }
+    }
+
+    private static void deliverMiniOrbOverlay(
+            @NonNull Context ctx,
+            @NonNull JSONObject payload,
+            @NonNull String tier) {
+        String message = payload.optString("message", "").trim();
+        String explanation = payload.optString("explanation", "").trim();
+        String action = payload.optString("action_label", "").trim();
+        if (action.isEmpty()) {
+            action = payload.optString("actionLabel", "").trim();
+        }
+
+        if (message.isEmpty()) {
+            message =
+                    "Spike noticed rapid app switching. A short reset could help you settle back in.";
+        }
+        if (explanation.isEmpty()) {
+            explanation =
+                    "SpikeSense saw several app changes in a short period, which can make it harder to stay focused.";
+        }
+        if (action.isEmpty()) {
+            action = "Return to Focus";
+        }
+
+        String severity = payload.optString("severity", "");
+        String pattern = payload.optString("pattern", "");
+
+        Log.i(
+                TAG,
+                "[NATIVE_NUDGE][OVERLAY_PAYLOAD] messageLen="
+                        + message.length()
+                        + " explanationLen="
+                        + explanation.length()
+                        + " actionLabel="
+                        + action
+                        + " delivery="
+                        + tier
+                        + " severity="
+                        + severity
+                        + " pattern="
+                        + pattern);
+
+        int drawable = SpikeOrbOverlayController.resolveSpikeDrawable(severity, false);
+        SpikeOrbOverlayController.showNudgeOrb(
+                ctx, message, explanation, action, severity, pattern, tier, drawable);
     }
 
     private static void postNudgeNotification(@NonNull Context ctx, @NonNull JSONObject payload) {

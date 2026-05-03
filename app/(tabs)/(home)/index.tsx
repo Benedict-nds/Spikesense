@@ -21,6 +21,7 @@ import AnimatedSection from '@/components/AnimatedSection';
 import AnimatedPressable from '@/components/AnimatedPressable';
 import InsightsTabContent from '@/components/InsightsTabContent';
 import SpikeMascot from '@/components/SpikeMascot';
+import type { SpikeMascotState } from '@/components/spikeMascotTypes';
 import BackgroundSlideshow from '@/components/BackgroundSlideshow';
 import { getDashboardBackgroundMeta } from '@/constants/backgroundImages';
 
@@ -104,6 +105,25 @@ export default function HomeScreen() {
     [activeTab]
   );
 
+  const achievementsSpikeState: SpikeMascotState = React.useMemo(() => {
+    if (challenges.some((c) => c.status === 'at_risk' || c.status === 'exceeded')) {
+      return 'concerned';
+    }
+    if (challenges.some((c) => c.completed)) {
+      return 'celebrating';
+    }
+    return 'motivated';
+  }, [challenges]);
+
+  useEffect(() => {
+    if (!__DEV__ || activeTab !== 'progress') return;
+    console.log('[FRONTEND][DASHBOARD_SPIKE_RENDER]', {
+      tab: 'progress',
+      state: 'focused',
+      reason: 'usage_section',
+    });
+  }, [activeTab]);
+
   useEffect(() => {
     if (!__DEV__ || activeTab !== 'achievements') return;
     console.log('[FRONTEND][TODAY_CHALLENGES_RENDER]', {
@@ -138,6 +158,11 @@ export default function HomeScreen() {
     if (modeConfig.mode !== 'relax' && streaks.length === 0) {
       console.log('[FRONTEND][EMPTY_STATE_RENDER]', { area: 'streaks' });
     }
+    const atRisk = challenges.some((c) => c.status === 'at_risk' || c.status === 'exceeded');
+    const done = challenges.some((c) => c.completed);
+    const state = atRisk ? 'concerned' : done ? 'celebrating' : 'motivated';
+    const reason = atRisk ? 'challenge_at_risk_or_exceeded' : done ? 'challenge_completed' : 'default';
+    console.log('[FRONTEND][DASHBOARD_SPIKE_RENDER]', { tab: 'achievements', state, reason });
   }, [activeTab, modeConfig.mode, badges, lockedBadges, challenges, streaks.length]);
 
   const formatTime = (minutes: number) => {
@@ -360,6 +385,9 @@ export default function HomeScreen() {
 
             <AnimatedSection index={1}>
               <View style={styles.section}>
+                <View style={styles.progressSpikeRow} pointerEvents="box-none">
+                  <SpikeMascot state="focused" size={52} animated showGlow clipMascot={false} />
+                </View>
                 <Text style={styles.sectionTitle}>Usage by Category</Text>
                 <View style={styles.chartContainer}>
                   <DoughnutChart
@@ -423,11 +451,15 @@ export default function HomeScreen() {
             {/* Daily challenges: behavior-aware list from backend (max 3 shown here) */}
             <AnimatedSection index={1}>
               <View style={styles.section}>
-                {challenges.some((c) => c.completed) ? (
-                  <View style={styles.spikeCelebrateWrap} accessibilityLabel="Progress celebration">
-                    <SpikeMascot state="celebrating" size={56} animated showGlow />
-                  </View>
-                ) : null}
+                <View style={styles.achievementsSpikeRow} pointerEvents="box-none">
+                  <SpikeMascot
+                    state={achievementsSpikeState}
+                    size={56}
+                    animated
+                    showGlow
+                    clipMascot={false}
+                  />
+                </View>
                 <Text style={styles.sectionTitle}>Today&apos;s Challenges</Text>
                 {challenges.length > 0 ? (
                   challenges.slice(0, 3).map((challenge, index) => (
@@ -690,9 +722,17 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#fff',
   },
-  spikeCelebrateWrap: {
+  achievementsSpikeRow: {
     alignItems: 'center',
     marginBottom: 10,
+    zIndex: 2,
+    elevation: 4,
+  },
+  progressSpikeRow: {
+    alignItems: 'center',
+    marginBottom: 8,
+    zIndex: 2,
+    elevation: 4,
   },
   emptySectionText: {
     fontSize: 14,

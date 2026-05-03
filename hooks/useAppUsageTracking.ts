@@ -387,7 +387,7 @@ export function useAppUsageTracking() {
           }
 
           const apps: AppUsageData[] = (topRaw as Record<string, unknown>[]).map((row) => {
-            const pkgRaw = row.package_name;
+            const pkgRaw = row.package_name ?? row.packageName;
             const pkg =
               typeof pkgRaw === 'string' && pkgRaw.trim() !== '' ? pkgRaw.trim() : undefined;
             return {
@@ -397,6 +397,7 @@ export function useAppUsageTracking() {
               openCount: Number(row.usage_count) || 0,
               lastUsed: new Date(),
               packageName: pkg,
+              package_name: pkg,
             };
           });
 

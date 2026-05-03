@@ -3,17 +3,11 @@
  * Handles all HTTP requests to the Flask backend
  */
 
-import { getApiBaseUrl } from '@/constants/api';
+import { API_BASE_URL } from '@/constants/api';
 import type { Mode } from '@/constants/modes';
 import { apiRequest, ApiRequestError } from '@/services/apiRequest';
 import type { NudgeDeliveryTier, NudgeRealtimePayload } from '@/types/nudgeDelivery';
 
-const API_BASE_URL = getApiBaseUrl();
-
-// Debug log at startup
-if (__DEV__) {
-  console.log('API base URL:', API_BASE_URL);
-}
 
 interface ApiResponse<T> {
   success: boolean;

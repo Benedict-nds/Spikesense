@@ -91,7 +91,7 @@ export default function OnboardingPermissions() {
     if (__DEV__) {
       console.log('[ONBOARDING][OPEN_USAGE_ACCESS_SETTINGS_TAP]');
     }
-    openUsageAccessSettingsFromOnboarding();
+    void openUsageAccessSettingsFromOnboarding();
   };
 
   const primaryLabel =
@@ -171,6 +171,12 @@ export default function OnboardingPermissions() {
         <OnboardingPrivacyNoteCard text="Your data is private and stays on your device." />
       </View>
 
+      {Platform.OS === 'android' && !usageAccessGranted ? (
+        <Text style={styles.usageReturnNote}>
+          After enabling Usage Access, return to SpikeSense to continue.
+        </Text>
+      ) : null}
+
       <Text style={styles.footerHint}>{footerHelper}</Text>
       {Platform.OS === 'android' ? (
         <Text style={styles.footerOptional}>
@@ -203,6 +209,13 @@ const styles = StyleSheet.create({
     marginBottom: onboardingSpace.sectionGap,
   },
   cards: { marginTop: 4 },
+  usageReturnNote: {
+    marginTop: 10,
+    fontSize: 13,
+    lineHeight: 18,
+    color: 'rgba(255,255,255,0.72)',
+    fontStyle: 'italic',
+  },
   footerHint: {
     marginTop: 8,
     fontSize: 14,

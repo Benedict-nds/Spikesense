@@ -1,5 +1,11 @@
 package com.spikesense;
 
+import android.app.AppOpsManager;
+import android.content.Context;
+import android.content.Intent;
+import android.os.Build;
+import android.os.Process;
+import android.provider.Settings;
 import android.util.Log;
 
 import com.facebook.react.bridge.Arguments;
@@ -23,6 +29,64 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
     @Override
     public String getName() {
         return "UsageStatsModule";
+    }
+
+    /**
+     * Whether PACKAGE_USAGE_STATS is allowed for this app (Usage Access).
+     */
+    @ReactMethod
+    public void hasUsageAccessPermission(Promise promise) {
+        try {
+            Context ctx = getReactApplicationContext();
+            AppOpsManager appOps = (AppOpsManager) ctx.getSystemService(Context.APP_OPS_SERVICE);
+            if (appOps == null) {
+                promise.resolve(false);
+                return;
+            }
+            int mode;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                mode = appOps.unsafeCheckOpNoThrow(
+                        AppOpsManager.OPSTR_GET_USAGE_STATS,
+                        Process.myUid(),
+                        ctx.getPackageName());
+            } else {
+                @SuppressWarnings("deprecation")
+                int legacy = appOps.checkOp(
+                        AppOpsManager.OPSTR_GET_USAGE_STATS,
+                        Process.myUid(),
+                        ctx.getPackageName());
+                mode = legacy;
+            }
+            promise.resolve(mode == AppOpsManager.MODE_ALLOWED);
+        } catch (Exception e) {
+            Log.e(TAG, "hasUsageAccessPermission failed", e);
+            promise.reject("ERROR", e);
+        }
+    }
+
+    /**
+     * Opens the system Usage Access screen (explicit user action).
+     */
+    @ReactMethod
+    public void openUsageAccessSettings(Promise promise) {
+        Context ctx = getReactApplicationContext();
+        try {
+            Intent intent = new Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS);
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            ctx.startActivity(intent);
+            promise.resolve(true);
+        } catch (Exception e) {
+            Log.w(TAG, "openUsageAccessSettings primary failed", e);
+            try {
+                Intent fallback = new Intent(Settings.ACTION_SETTINGS);
+                fallback.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                ctx.startActivity(fallback);
+                promise.resolve(true);
+            } catch (Exception e2) {
+                Log.e(TAG, "openUsageAccessSettings fallback failed", e2);
+                promise.reject("OPEN_FAILED", e2);
+            }
+        }
     }
 
     @ReactMethod
