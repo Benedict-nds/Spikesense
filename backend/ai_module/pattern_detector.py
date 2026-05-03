@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import logging
 from collections import deque
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import Enum, IntEnum
 from typing import Deque, Dict, Iterable, List, Optional
+
+logger = logging.getLogger(__name__)
 
 
 # ----------------------------
@@ -92,7 +95,8 @@ class PatternDetector:
         self,
         event: UsageEvent,
         focus_mode: str = "Personal",
-        personalized_thresholds: Optional[Dict[str, float]] = None
+        personalized_thresholds: Optional[Dict[str, float]] = None,
+        mode_profile_multipliers: Optional[Dict[str, float]] = None,
     ) -> Dict[str, object]:
 
         self._push_event(event)
@@ -101,7 +105,8 @@ class PatternDetector:
         result = self._detect_overstimulation(
             metrics,
             focus_mode,
-            personalized_thresholds
+            personalized_thresholds,
+            mode_profile_multipliers,
         )
 
         self._state = result["state"]
@@ -130,15 +135,20 @@ class PatternDetector:
         - Iterates directly over the deque.
         - No list(...) conversion or intermediate copies.
         """
+        window_minutes = max(0.0, self.window.total_seconds() / 60.0)
 
         if len(self._events) < 2:
-            return {
+            out = {
                 "switches": 0,
                 "impulsive_switches": 0,
                 "intentional_sessions": 0,
                 "entertainment_seconds": 0,
-                "total_seconds": 0
+                "total_seconds": 0,
+                "window_minutes": window_minutes,
+                "switch_rate": 0.0,
             }
+            self._log_metrics_debug(out)
+            return out
 
         switches = 0
         impulsive = 0
@@ -166,13 +176,34 @@ class PatternDetector:
 
             prev = cur
 
-        return {
+        switch_rate = (switches / window_minutes) if window_minutes > 0 else 0.0
+
+        out = {
             "switches": switches,
+            "switch_rate": switch_rate,
             "impulsive_switches": impulsive,
             "intentional_sessions": intentional,
             "entertainment_seconds": entertainment_seconds,
-            "total_seconds": total_seconds
+            "total_seconds": total_seconds,
+            "window_minutes": window_minutes,
         }
+        self._log_metrics_debug(out)
+        return out
+
+    @staticmethod
+    def _log_metrics_debug(metrics: Dict[str, float]) -> None:
+        if not logger.isEnabledFor(logging.DEBUG):
+            return
+        logger.debug(
+            "[PATTERN_DETECTOR][METRICS] switches=%s switch_rate=%.4f impulsive=%s "
+            "entertainment_seconds=%s window_minutes=%.4f total_seconds=%s",
+            metrics.get("switches"),
+            float(metrics.get("switch_rate", 0.0)),
+            metrics.get("impulsive_switches"),
+            metrics.get("entertainment_seconds"),
+            float(metrics.get("window_minutes", 0.0)),
+            metrics.get("total_seconds"),
+        )
 
     # -----------------------------------------------------
     # State machine & scoring
@@ -182,7 +213,8 @@ class PatternDetector:
         self,
         metrics: Dict[str, float],
         focus_mode: str,
-        personalized: Optional[Dict[str, float]]
+        personalized: Optional[Dict[str, float]],
+        mode_profile_multipliers: Optional[Dict[str, float]] = None,
     ) -> Dict[str, object]:
 
         thresholds = dict(self.BASE_THRESHOLDS)
@@ -190,6 +222,20 @@ class PatternDetector:
 
         if personalized:
             thresholds.update(personalized)
+
+        # Adaptive mode V2: multiply selected knobs (after base + mode + personalization)
+        if mode_profile_multipliers:
+            for key, mult in mode_profile_multipliers.items():
+                if key not in thresholds or mult is None:
+                    continue
+                try:
+                    thresholds[key] = float(thresholds[key]) * float(mult)
+                except (TypeError, ValueError):
+                    continue
+
+        thresholds["impulsive_weight"] = max(0.8, float(thresholds.get("impulsive_weight", 2.5)))
+        thresholds["entertainment_cost"] = max(0.35, float(thresholds.get("entertainment_cost", 1.0)))
+        thresholds["overstim_score"] = max(3.0, float(thresholds.get("overstim_score", 10.0)))
 
         impulsive_score = (
             metrics["impulsive_switches"]
@@ -219,7 +265,13 @@ class PatternDetector:
             "severity": severity,
             "score": round(total_score, 2),
             "metrics": metrics,
-            "focus_mode": focus_mode
+            "focus_mode": focus_mode,
+            "effective_thresholds": {
+                "impulsive_weight": round(float(thresholds["impulsive_weight"]), 4),
+                "entertainment_cost": round(float(thresholds["entertainment_cost"]), 4),
+                "overstim_score": round(float(thresholds["overstim_score"]), 4),
+            },
+            "mode_profile_multipliers": dict(mode_profile_multipliers or {}),
         }
 
     def _transition_state(

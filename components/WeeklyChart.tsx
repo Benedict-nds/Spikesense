@@ -12,9 +12,13 @@ const CHART_WIDTH = Dimensions.get('window').width - 64;
 
 export default function WeeklyChart({ data }: WeeklyChartProps) {
   const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const toNumber = (value: unknown): number => {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : 0;
+  };
   const hasData = data && data.length > 0;
-  const hasMeaningfulData = hasData && data.some(d => (d.screenTime || 0) > 0);
-  const maxScreenTime = hasMeaningfulData ? Math.max(1, ...data.map(d => d.screenTime || 0)) : 1;
+  const hasMeaningfulData = hasData && data.some(d => toNumber(d.screenTime) > 0);
+  const maxScreenTime = hasMeaningfulData ? Math.max(1, ...data.map(d => toNumber(d.screenTime))) : 1;
 
   if (!hasData || !hasMeaningfulData) {
     return (
@@ -31,7 +35,8 @@ export default function WeeklyChart({ data }: WeeklyChartProps) {
       <View style={styles.chartContainer}>
         <View style={styles.chart}>
           {data.map((item, index) => {
-            const height = maxScreenTime > 0 ? (item.screenTime / maxScreenTime) * CHART_HEIGHT : 0;
+            const screenTime = toNumber(item.screenTime);
+            const height = maxScreenTime > 0 ? (screenTime / maxScreenTime) * CHART_HEIGHT : 0;
             const date = new Date(item.date);
             const dayName = days[date.getDay()];
             

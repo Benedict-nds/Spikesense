@@ -19,9 +19,14 @@ export default function DoughnutChart({
   centerText,
   centerSubtext,
 }: DoughnutChartProps) {
+  const toNumber = (value: unknown): number => {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : 0;
+  };
+
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
-  const total = data.reduce((sum, item) => sum + item.value, 0);
+  const total = data.reduce((sum, item) => sum + toNumber(item.value), 0);
   const centerRadius = radius - strokeWidth / 2 - 10; // Inner radius for background circle
 
   if (total === 0) {
@@ -42,7 +47,8 @@ export default function DoughnutChart({
       <Svg width={size} height={size}>
         <G rotation={0} origin={`${size / 2}, ${size / 2}`}>
           {data.map((item, index) => {
-            const percentage = item.value / total;
+            const value = toNumber(item.value);
+            const percentage = total > 0 ? value / total : 0;
             const strokeDashoffset = circumference * (1 - percentage);
             const rotation = currentAngle;
             currentAngle += percentage * 360;

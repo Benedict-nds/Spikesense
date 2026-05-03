@@ -64,6 +64,7 @@ export function generateMockData(): DailyStats {
     otherTime,
     focusTime,
     focusScore,
+    focusScoreReason: 'Sample explanation for mock data.',
     apps: apps.sort((a, b) => b.usageTime - a.usageTime),
   };
 }

@@ -16,12 +16,14 @@ import {
 import { StatusBar } from "expo-status-bar";
 import { Button } from "@/components/button";
 import { WidgetProvider } from "@/contexts/WidgetContext";
+import FocusEnforcementHost from "@/components/FocusEnforcementHost";
+import NudgeInterventionHost from "@/components/NudgeInterventionHost";
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
 
 export const unstable_settings = {
-  initialRouteName: "(tabs)",
+  initialRouteName: "index",
 };
 
 export default function RootLayout() {
@@ -84,8 +86,10 @@ export default function RootLayout() {
           value={colorScheme === "dark" ? CustomDarkTheme : CustomDefaultTheme}
         >
           <WidgetProvider>
-            <GestureHandlerRootView>
+            <GestureHandlerRootView style={{ flex: 1 }}>
             <Stack>
+              <Stack.Screen name="index" options={{ headerShown: false }} />
+              <Stack.Screen name="onboarding" options={{ headerShown: false }} />
               {/* Main app with tabs */}
               <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
 
@@ -115,6 +119,8 @@ export default function RootLayout() {
                 }}
               />
             </Stack>
+            <FocusEnforcementHost />
+            <NudgeInterventionHost />
             <SystemBars style={"auto"} />
             </GestureHandlerRootView>
           </WidgetProvider>

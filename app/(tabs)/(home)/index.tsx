@@ -1,14 +1,16 @@
-import React, { useState, useEffect } from 'react';
-import { ScrollView, View, Text, StyleSheet, Platform, ImageBackground, ActivityIndicator, Pressable } from 'react-native';
+import React, { useState, useEffect, useCallback } from 'react';
+import { ScrollView, View, Text, StyleSheet, ActivityIndicator, Pressable, RefreshControl } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { Stack } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BlurView } from 'expo-blur';
-import Animated, { useAnimatedStyle, useSharedValue, withTiming, Easing, runOnJS, cancelAnimation } from 'react-native-reanimated';
 import { colors } from '@/styles/commonStyles';
 import { useAppUsageTracking } from '@/hooks/useAppUsageTracking';
+import { useDisplayName } from '@/hooks/useOnboarding';
+import { callName } from '@/services/userProfile';
 import WeeklyChart from '@/components/WeeklyChart';
 import AppUsageList from '@/components/AppUsageList';
-import NudgeCard from '@/components/NudgeCard';
+import NudgeCard, { NudgeErrorBoundary } from '@/components/NudgeCard';
 import StatCard from '@/components/StatCard';
 import DoughnutChart from '@/components/DoughnutChart';
 import BadgeCard from '@/components/BadgeCard';
@@ -17,86 +19,26 @@ import ChallengeCard from '@/components/ChallengeCard';
 import FocusModeCard from '@/components/FocusModeCard';
 import AnimatedSection from '@/components/AnimatedSection';
 import AnimatedPressable from '@/components/AnimatedPressable';
-
-const BACKGROUND_IMAGES = [
-  require('@/assets/images/spikewall.jpeg'),
-  require('@/assets/images/spikewall2.jpeg'),
-  require('@/assets/images/spikewall4.jpeg'),
-];
-const CROSSFADE_DURATION_MS = 1200;
-const BACKGROUND_VISIBLE_MS = 5000;
+import InsightsTabContent from '@/components/InsightsTabContent';
+import SpikeMascot from '@/components/SpikeMascot';
+import BackgroundSlideshow from '@/components/BackgroundSlideshow';
+import { getDashboardBackgroundMeta } from '@/constants/backgroundImages';
 
 type TabType = 'overview' | 'progress' | 'achievements' | 'insights';
 
-const N = BACKGROUND_IMAGES.length;
+/** Space below scroll content so floating / native tab bars never cover cards */
+const TAB_BAR_SCROLL_PADDING = 88;
 
 export default function HomeScreen() {
   const [activeTab, setActiveTab] = useState<TabType>('overview');
-  // Two layers: we alternate which one fades in. Only the *hidden* layer gets its image updated (no switchback).
-  const [layer0ImageIndex, setLayer0ImageIndex] = useState(0);
-  const [layer1ImageIndex, setLayer1ImageIndex] = useState(1 % N);
-  const opacity0 = useSharedValue(1);
-  const opacity1 = useSharedValue(0);
   const insets = useSafeAreaInsets();
-
-  const timeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
-  const nextLayerToFadeRef = React.useRef<0 | 1>(1); // start by fading in layer 1
-  // Refs keep indices in sync so the timeout (runFade) always reads current values, not stale closure state
-  const layer0ImageIndexRef = React.useRef(0);
-  const layer1ImageIndexRef = React.useRef(1 % N);
-
-  const onFadeComplete = (fadedLayer: 0 | 1, visibleImageIndex: number) => {
-    const hiddenLayer = (1 - fadedLayer) as 0 | 1;
-    const nextIndex = (visibleImageIndex + 1) % N;
-    if (hiddenLayer === 0) {
-      opacity0.value = 0;
-      setLayer0ImageIndex(nextIndex);
-      layer0ImageIndexRef.current = nextIndex;
-    } else {
-      opacity1.value = 0;
-      setLayer1ImageIndex(nextIndex);
-      layer1ImageIndexRef.current = nextIndex;
-    }
-    nextLayerToFadeRef.current = hiddenLayer;
-    scheduleNextFade();
-  };
-
-  const runFade = () => {
-    const layer = nextLayerToFadeRef.current;
-    // Use refs so we get current indices when timeout fires (avoids stale closure)
-    const visibleIndex = layer === 0 ? layer0ImageIndexRef.current : layer1ImageIndexRef.current;
-    const opacity = layer === 0 ? opacity0 : opacity1;
-    // Cancel any in-flight animation and force start from 0 so every transition is a visible crossfade
-    cancelAnimation(opacity);
-    opacity.value = 0;
-    opacity.value = withTiming(
-      1,
-      { duration: CROSSFADE_DURATION_MS, easing: Easing.inOut(Easing.ease) },
-      (finished) => {
-        if (finished) runOnJS(onFadeComplete)(layer, visibleIndex);
-      }
-    );
-  };
-
-  const scheduleNextFade = () => {
-    timeoutRef.current = setTimeout(runFade, BACKGROUND_VISIBLE_MS);
-  };
-
-  useEffect(() => {
-    scheduleNextFade();
-    return () => {
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    };
-  }, []);
-
-  const layer0Style = useAnimatedStyle(() => ({ opacity: opacity0.value }));
-  const layer1Style = useAnimatedStyle(() => ({ opacity: opacity1.value }));
   const {
     dailyStats,
     nudges,
     dismissNudge,
     modeConfig,
     badges,
+    lockedBadges,
     streaks,
     challenges,
     weeklyData,
@@ -104,9 +46,99 @@ export default function HomeScreen() {
     loading,
     error,
     retry,
+    refreshDailyStats,
+    refreshStatsAndNudges,
+    refreshAchievements,
+    refreshProgressData,
     startFocusSession,
     endFocusSession,
   } = useAppUsageTracking();
+
+  const { displayName, refresh: refreshDisplayName } = useDisplayName();
+
+  const [refreshing, setRefreshing] = useState(false);
+  const skipFocusRefreshOnce = React.useRef(true);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await refreshDailyStats();
+      await refreshAchievements();
+      await refreshProgressData();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refreshDailyStats, refreshAchievements, refreshProgressData]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void refreshDisplayName();
+      if (skipFocusRefreshOnce.current) {
+        skipFocusRefreshOnce.current = false;
+        return;
+      }
+      if (__DEV__) console.log('[FRONTEND][HOME_FOCUS_REFRESH]');
+      void refreshStatsAndNudges();
+    }, [refreshStatsAndNudges, refreshDisplayName])
+  );
+
+  useEffect(() => {
+    if (!__DEV__) return;
+    console.log('[FRONTEND][NUDGES_RENDER]', { count: nudges.length });
+  }, [nudges.length]);
+
+  useEffect(() => {
+    if (activeTab === 'achievements') {
+      void refreshAchievements();
+    }
+    if (activeTab === 'progress') {
+      void refreshProgressData();
+    }
+    if (activeTab === 'insights') {
+      void refreshDailyStats();
+    }
+  }, [activeTab, refreshAchievements, refreshProgressData, refreshDailyStats]);
+
+  const tabBackgroundImages = React.useMemo(
+    () => getDashboardBackgroundMeta(activeTab).images,
+    [activeTab]
+  );
+
+  useEffect(() => {
+    if (!__DEV__ || activeTab !== 'achievements') return;
+    console.log('[FRONTEND][TODAY_CHALLENGES_RENDER]', {
+      count: challenges.length,
+      keys: challenges.map((c) => c.challengeKey ?? c.id),
+      sample: challenges[0]
+        ? {
+            id: challenges[0].id,
+            title: challenges[0].title,
+            challengeKey: challenges[0].challengeKey,
+            completed: challenges[0].completed,
+            status: challenges[0].status,
+          }
+        : null,
+    });
+    console.log('[FRONTEND][BADGES_RENDER]', {
+      earned: badges.length,
+      locked: lockedBadges.length,
+      firstEarned: badges[0]
+        ? { id: badges[0].id, badgeKey: badges[0].badgeKey, name: badges[0].name }
+        : null,
+      firstLocked: lockedBadges[0]
+        ? { badgeKey: lockedBadges[0].badgeKey, name: lockedBadges[0].name }
+        : null,
+    });
+    if (badges.length === 0 && lockedBadges.length === 0) {
+      console.log('[FRONTEND][EMPTY_STATE_RENDER]', { area: 'badges', reason: 'badges_array_empty' });
+    }
+    if (challenges.length === 0) {
+      console.log('[FRONTEND][EMPTY_STATE_RENDER]', { area: 'challenges', reason: 'no_mapped_challenge' });
+    }
+    if (modeConfig.mode !== 'relax' && streaks.length === 0) {
+      console.log('[FRONTEND][EMPTY_STATE_RENDER]', { area: 'streaks' });
+    }
+  }, [activeTab, modeConfig.mode, badges, lockedBadges, challenges, streaks.length]);
 
   const formatTime = (minutes: number) => {
     const totalMins = Math.floor(Number(minutes));
@@ -117,44 +149,106 @@ export default function HomeScreen() {
 
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={styles.loadingText}>Loading...</Text>
-      </View>
+      <>
+        <Stack.Screen options={{ headerShown: false }} />
+        <BackgroundSlideshow
+          mode={modeConfig.mode}
+          screen={activeTab}
+          images={tabBackgroundImages}
+          rotate={false}
+          overlayVariant="dark"
+          overlayOpacity={0.58}
+        >
+          <View style={[styles.loadingContainer, { flex: 1 }]}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={styles.loadingText}>Loading...</Text>
+          </View>
+        </BackgroundSlideshow>
+      </>
     );
   }
 
-  if (error) {
+  if (error && !dailyStats) {
     return (
-      <View style={styles.loadingContainer}>
-        <Text style={styles.errorText}>Unable to load data.</Text>
-        <Text style={styles.errorSubtext}>{error}</Text>
-        {__DEV__ && (error === 'Unable to connect to backend.' || error === 'Unable to load data.') && (
-          <Text style={styles.errorHint}>
-            On a physical device, the app uses your dev machine&apos;s address from Expo, or set EXPO_PUBLIC_API_URL in .env (e.g. http://YOUR_IP:5000/api) if needed.
-          </Text>
-        )}
-        <Pressable style={styles.retryButton} onPress={retry}>
-          <Text style={styles.retryButtonText}>Retry</Text>
-        </Pressable>
-      </View>
+      <>
+        <Stack.Screen options={{ headerShown: false }} />
+        <BackgroundSlideshow
+          mode={modeConfig.mode}
+          screen={activeTab}
+          images={tabBackgroundImages}
+          rotate={false}
+          overlayVariant="dark"
+          overlayOpacity={0.58}
+        >
+          <View style={[styles.loadingContainer, { flex: 1 }]}>
+            <Text style={styles.errorText}>Unable to load data.</Text>
+            <Text style={styles.errorSubtext}>{error}</Text>
+            {__DEV__ && (error === 'Unable to connect to backend.' || error === 'Unable to load data.') && (
+              <Text style={styles.errorHint}>
+                On a physical device, the app uses your dev machine&apos;s address from Expo, or set EXPO_PUBLIC_API_URL in .env (e.g. http://YOUR_IP:5000/api) if needed.
+              </Text>
+            )}
+            <Pressable style={styles.retryButton} onPress={retry}>
+              <Text style={styles.retryButtonText}>Retry</Text>
+            </Pressable>
+          </View>
+        </BackgroundSlideshow>
+      </>
     );
   }
 
   if (!dailyStats) {
     return (
-      <View style={styles.loadingContainer}>
-        <Text style={styles.errorText}>No data yet.</Text>
-        <Text style={styles.errorSubtext}>Use the app to start tracking.</Text>
-      </View>
+      <>
+        <Stack.Screen options={{ headerShown: false }} />
+        <BackgroundSlideshow
+          mode={modeConfig.mode}
+          screen={activeTab}
+          images={tabBackgroundImages}
+          rotate={false}
+          overlayVariant="dark"
+          overlayOpacity={0.58}
+        >
+          <View style={[styles.loadingContainer, { flex: 1 }]}>
+            <Text style={styles.errorText}>Almost there</Text>
+            <Text style={styles.errorSubtext}>
+              Once you start using your phone, we&apos;ll show your usage and focus score here.
+            </Text>
+          </View>
+        </BackgroundSlideshow>
+      </>
     );
   }
 
+  const safeMin = (n: number) => (Number.isFinite(n) && n >= 0 ? n : 0);
+  const overviewScreenMin =
+    safeMin(dailyStats.totalScreenTime) ||
+    (dailyStats.totalUsageSeconds != null && dailyStats.totalUsageSeconds > 0
+      ? Math.floor(safeMin(dailyStats.totalUsageSeconds) / 60)
+      : 0);
+  const overviewSwitches = safeMin(dailyStats.appSwitches);
+  const overviewFocusMin =
+    safeMin(dailyStats.focusTime) || safeMin(dailyStats.productivityTime ?? 0);
+  const overviewEntMin = safeMin(dailyStats.entertainmentTime);
+  const showTodaysOverview =
+    overviewScreenMin > 0 ||
+    overviewSwitches > 0 ||
+    overviewFocusMin > 0 ||
+    overviewEntMin > 0;
+  const focusScoreDisplay = Number.isFinite(dailyStats.focusScore)
+    ? Math.round(Math.max(0, Math.min(100, dailyStats.focusScore)))
+    : 0;
+  const hasDayUsage =
+    safeMin(dailyStats.totalScreenTime) > 0 ||
+    safeMin(dailyStats.appSwitches) > 0 ||
+    (dailyStats.totalUsageSeconds ?? 0) > 0;
+  const namedTopApps = dailyStats.apps.filter((a) => (a.appName || '').trim().length > 0);
+
   const categoryData = [
-    { label: 'Productivity', value: dailyStats.productivityTime, color: colors.primary },
-    { label: 'Social', value: dailyStats.socialTime, color: colors.secondary },
-    { label: 'Entertainment', value: dailyStats.entertainmentTime, color: colors.accent },
-    { label: 'Other', value: dailyStats.otherTime, color: colors.textSecondary },
+    { label: 'Productivity', value: safeMin(dailyStats.productivityTime), color: colors.primary },
+    { label: 'Social', value: safeMin(dailyStats.socialTime), color: colors.secondary },
+    { label: 'Entertainment', value: safeMin(dailyStats.entertainmentTime), color: colors.accent },
+    { label: 'Other', value: safeMin(dailyStats.otherTime), color: colors.textSecondary },
   ];
 
   const renderTabContent = () => {
@@ -162,25 +256,24 @@ export default function HomeScreen() {
       case 'overview':
         return (
           <>
-            {/* Focus Score (Motivational) */}
-            {modeConfig.motivational.enabled && modeConfig.motivational.showFocusScore && (
+            {/* Focus Score */}
+            {modeConfig.mode !== 'relax' && (
               <AnimatedSection index={0}>
                 <View style={styles.section}>
                   <Text style={styles.sectionTitle}>Today&apos;s Focus Score</Text>
                   <View style={styles.focusScoreCard}>
                     <View style={styles.focusScoreCircle}>
-                      <Text style={styles.focusScoreValue}>{dailyStats.focusScore}</Text>
+                      <Text style={styles.focusScoreValue}>{focusScoreDisplay}</Text>
                       <Text style={styles.focusScoreLabel}>/ 100</Text>
                     </View>
-                    <View style={styles.focusScoreInfo}>
+                    <View style={[styles.focusScoreInfo, styles.focusScoreInfoFlex]}>
                       <Text style={styles.focusScoreText}>
-                        {dailyStats.focusScore >= 80 ? 'Excellent focus today! 🎉' :
-                         dailyStats.focusScore >= 60 ? 'Good focus, keep it up! 👍' :
-                         dailyStats.focusScore >= 40 ? 'Room for improvement 💪' :
-                         'Let\'s work on focus tomorrow 🌱'}
+                        {dailyStats.focusScoreReason?.trim()
+                          ? dailyStats.focusScoreReason
+                          : 'Your focus score summarizes switching, entertainment, and productive time for today.'}
                       </Text>
-                      <Text style={styles.focusScoreDetail}>
-                        {formatTime(dailyStats.focusTime)} of focused work
+                      <Text style={styles.focusScoreSubDetail}>
+                        {formatTime(safeMin(dailyStats.focusTime))} on productivity apps
                       </Text>
                     </View>
                   </View>
@@ -193,39 +286,65 @@ export default function HomeScreen() {
               <AnimatedSection index={1}>
                 <View style={styles.section}>
                   <Text style={styles.sectionTitle}>Notifications</Text>
-                  {nudges.map(nudge => (
-                    <NudgeCard 
-                      key={nudge.id} 
-                      nudge={nudge} 
-                      onDismiss={dismissNudge}
-                    />
+                  {nudges.map((nudge, nudgeIndex) => (
+                    <NudgeErrorBoundary key={String(nudge?.id ?? `nudge-${nudgeIndex}`)}>
+                      <NudgeCard nudge={nudge} onDismiss={dismissNudge} />
+                    </NudgeErrorBoundary>
                   ))}
                 </View>
               </AnimatedSection>
             )}
 
-            {/* Daily Overview */}
-            <AnimatedSection index={2}>
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Today&apos;s Overview</Text>
-                <View style={styles.statsGrid}>
-                  <StatCard
-                    icon="clock.fill"
-                    label="Screen Time"
-                    value={formatTime(dailyStats.totalScreenTime)}
-                    color={colors.primary}
-                    index={0}
-                  />
-                  <StatCard
-                    icon="arrow.triangle.swap"
-                    label="App Switches"
-                    value={dailyStats.appSwitches.toString()}
-                    color={colors.accent}
-                    index={1}
-                  />
+            {/* Daily Overview — hidden when there is no meaningful day data */}
+            {showTodaysOverview && (
+              <AnimatedSection index={2}>
+                <View style={styles.section}>
+                  <Text style={styles.sectionTitle}>Today&apos;s Overview</Text>
+                  <View style={styles.statsGridColumn}>
+                    <View style={styles.statsRow}>
+                      <View style={styles.statCell}>
+                        <StatCard
+                          icon="clock.fill"
+                          label="Screen Time"
+                          value={formatTime(overviewScreenMin)}
+                          color={colors.primary}
+                          index={0}
+                        />
+                      </View>
+                      <View style={styles.statCell}>
+                        <StatCard
+                          icon="arrow.triangle.swap"
+                          label="App Switches"
+                          value={String(Math.max(0, Math.floor(overviewSwitches)))}
+                          color={colors.accent}
+                          index={1}
+                        />
+                      </View>
+                    </View>
+                    <View style={styles.statsRow}>
+                      <View style={styles.statCell}>
+                        <StatCard
+                          icon="lightbulb.fill"
+                          label="Focus Time"
+                          value={formatTime(overviewFocusMin)}
+                          color={colors.secondary}
+                          index={2}
+                        />
+                      </View>
+                      <View style={styles.statCell}>
+                        <StatCard
+                          icon="play.fill"
+                          label="Entertainment"
+                          value={formatTime(overviewEntMin)}
+                          color={colors.primary}
+                          index={3}
+                        />
+                      </View>
+                    </View>
+                  </View>
                 </View>
-              </View>
-            </AnimatedSection>
+              </AnimatedSection>
+            )}
           </>
         );
 
@@ -266,7 +385,11 @@ export default function HomeScreen() {
             <AnimatedSection index={2}>
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>App Usage Details</Text>
-                <AppUsageList apps={dailyStats.apps} />
+                <AppUsageList
+                  apps={dailyStats.apps}
+                  loading={refreshing}
+                  usagePresentButNoTopApps={hasDayUsage && namedTopApps.length === 0}
+                />
               </View>
             </AnimatedSection>
           </>
@@ -275,7 +398,12 @@ export default function HomeScreen() {
       case 'achievements':
         return (
           <>
-            {modeConfig.motivational.enabled && modeConfig.motivational.showStreaks && (
+            {refreshing ? (
+              <View style={styles.syncBanner}>
+                <Text style={styles.syncBannerText}>Syncing latest…</Text>
+              </View>
+            ) : null}
+            {modeConfig.mode !== 'relax' && (
               <AnimatedSection index={0}>
                 <View style={styles.section}>
                   <Text style={styles.sectionTitle}>Your Streaks</Text>
@@ -284,54 +412,80 @@ export default function HomeScreen() {
                       <StreakCard key={index} streak={streak} index={index} />
                     ))
                   ) : (
-                    <Text style={styles.emptySectionText}>No streaks yet.</Text>
+                    <Text style={styles.emptySectionText}>
+                      Open SpikeSense on consecutive days to start a streak—gentle and optional.
+                    </Text>
                   )}
                 </View>
               </AnimatedSection>
             )}
 
-            {modeConfig.motivational.enabled && modeConfig.motivational.showChallenges && (
-              <AnimatedSection index={1}>
-                <View style={styles.section}>
-                  <Text style={styles.sectionTitle}>Active Challenges</Text>
-                  {challenges.length > 0 ? (
-                    challenges.map((challenge, index) => (
-                      <ChallengeCard key={challenge.id} challenge={challenge} index={index} />
-                    ))
-                  ) : (
-                    <Text style={styles.emptySectionText}>No challenges yet.</Text>
-                  )}
-                </View>
-              </AnimatedSection>
-            )}
+            {/* Daily challenges: behavior-aware list from backend (max 3 shown here) */}
+            <AnimatedSection index={1}>
+              <View style={styles.section}>
+                {challenges.some((c) => c.completed) ? (
+                  <View style={styles.spikeCelebrateWrap} accessibilityLabel="Progress celebration">
+                    <SpikeMascot state="celebrating" size={56} animated showGlow />
+                  </View>
+                ) : null}
+                <Text style={styles.sectionTitle}>Today&apos;s Challenges</Text>
+                {challenges.length > 0 ? (
+                  challenges.slice(0, 3).map((challenge, index) => (
+                    <ChallengeCard key={challenge.id || `ch-${index}`} challenge={challenge} index={index} />
+                  ))
+                ) : (
+                  <View style={styles.emptyCard}>
+                    <Text style={styles.emptySectionText}>
+                      Challenges will appear once SpikeSense understands your day. Pull down to refresh anytime.
+                    </Text>
+                  </View>
+                )}
+              </View>
+            </AnimatedSection>
 
-            {modeConfig.motivational.enabled && modeConfig.motivational.showBadges && (
-              <AnimatedSection index={2}>
-                <View style={styles.section}>
-                  <Text style={styles.sectionTitle}>Badges & Achievements</Text>
-                  {badges.length > 0 ? (
-                    <ScrollView
-                      horizontal
-                      showsHorizontalScrollIndicator={false}
-                      contentContainerStyle={styles.badgesContainer}
-                    >
-                      {badges.map(badge => (
-                        <BadgeCard key={badge.id} badge={badge} />
-                      ))}
-                    </ScrollView>
-                  ) : (
-                    <Text style={styles.emptySectionText}>No badges yet.</Text>
-                  )}
-                </View>
-              </AnimatedSection>
-            )}
+            {/* Badge collection: earned first, then locked previews from API */}
+            <AnimatedSection index={2}>
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Badge Collection</Text>
+                <Text style={styles.sectionSubtitle}>
+                  Rewards earned from focus, switching, and healthier habits.
+                </Text>
+                {badges.length > 0 ? (
+                  <Text style={styles.badgeCountHint}>{badges.length} earned</Text>
+                ) : null}
+                {badges.length > 0 || lockedBadges.length > 0 ? (
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.badgesContainer}
+                  >
+                    {badges.map((badge, badgeIndex) => (
+                      <BadgeCard
+                        key={badge.id ? `badge-${badge.id}` : `badge-${badge.badgeKey ?? 'row'}-${badgeIndex}`}
+                        badge={badge}
+                      />
+                    ))}
+                    {lockedBadges.map((badge, badgeIndex) => (
+                      <BadgeCard
+                        key={`locked-${badge.badgeKey ?? badgeIndex}`}
+                        badge={badge}
+                      />
+                    ))}
+                  </ScrollView>
+                ) : (
+                  <Text style={styles.emptySectionText}>
+                    Badges will show up here as you keep tracking—no rush.
+                  </Text>
+                )}
+              </View>
+            </AnimatedSection>
           </>
         );
 
       case 'insights':
         return (
           <>
-            {modeConfig.restrictive.enabled && modeConfig.restrictive.enableFocusMode && (
+            {modeConfig.mode === 'focus' && (
               <AnimatedSection index={0}>
                 <View style={styles.section}>
                   <FocusModeCard 
@@ -343,41 +497,18 @@ export default function HomeScreen() {
               </AnimatedSection>
             )}
 
-            {modeConfig.supportive.enabled && modeConfig.supportive.showInsights && (
-              <AnimatedSection index={1}>
-                <View style={styles.section}>
-                  <Text style={styles.sectionTitle}>Insights</Text>
-                  <View style={styles.insightCard}>
-                    <View style={styles.insightHeader}>
-                      <Text style={styles.insightIcon}>💡</Text>
-                      <Text style={styles.insightTitle}>Understanding Your Habits</Text>
-                    </View>
-                    <Text style={styles.insightText}>
-                      {dailyStats.appSwitches > 50 
-                        ? `You switched apps ${dailyStats.appSwitches} times today. Frequent switching can indicate cognitive overload. Try focusing on one task for 25-minute intervals.`
-                        : `Great job! You kept app switching to ${dailyStats.appSwitches} times today. This shows good focus and task management.`}
-                    </Text>
-                  </View>
-                </View>
-              </AnimatedSection>
-            )}
-
-            {modeConfig.supportive.enabled && modeConfig.supportive.showEducationalTips && (
-              <AnimatedSection index={2}>
-                <View style={styles.section}>
-                  <Text style={styles.sectionTitle}>Wellness Tips</Text>
-                  <View style={styles.tipCard}>
-                    <View style={styles.tipHeader}>
-                      <Text style={styles.tipIcon}>📚</Text>
-                      <Text style={styles.tipTitle}>Wellness Tip</Text>
-                    </View>
-                    <Text style={styles.tipText}>
-                      Small breaks every 45 minutes can improve focus and reduce stress. Try the 20-20-20 rule: every 20 minutes, look at something 20 feet away for 20 seconds.
-                    </Text>
-                  </View>
-                </View>
-              </AnimatedSection>
-            )}
+            <AnimatedSection index={modeConfig.mode === 'focus' ? 1 : 0}>
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Insights</Text>
+                <InsightsTabContent
+                  dailyStats={dailyStats}
+                  refreshing={refreshing}
+                  loadError={activeTab === 'insights' && error ? error : null}
+                  onRetry={retry}
+                  displayName={displayName}
+                />
+              </View>
+            </AnimatedSection>
           </>
         );
 
@@ -396,30 +527,20 @@ export default function HomeScreen() {
   return (
     <>
       <Stack.Screen options={{ headerShown: false }} />
-      <View style={styles.backgroundWrap}>
-        {/* Two-layer slideshow: we only ever update the *hidden* layer to the next image, so the visible image never switches back */}
-        <Animated.View style={[styles.backgroundLayer, layer0Style]}>
-          <ImageBackground
-            source={BACKGROUND_IMAGES[layer0ImageIndex]}
-            style={styles.backgroundImage}
-            resizeMode="cover"
-          />
-        </Animated.View>
-        <Animated.View style={[styles.backgroundLayer, layer1Style]}>
-          <ImageBackground
-            source={BACKGROUND_IMAGES[layer1ImageIndex]}
-            style={styles.backgroundImage}
-            resizeMode="cover"
-          />
-        </Animated.View>
-        {/* Dark Overlay for Readability */}
-        <View style={styles.overlay} />
-
+      <BackgroundSlideshow
+        mode={modeConfig.mode}
+        screen={activeTab}
+        images={tabBackgroundImages}
+        rotate={false}
+        overlayVariant="dark"
+        overlayOpacity={0.58}
+      >
         <View style={styles.container}>
           {/* Header */}
           <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
             <Text style={styles.title}>SpikeSense</Text>
-            <Text style={styles.subtitle}>Your Digital Wellness Coach</Text>
+            <Text style={styles.subtitle}>Welcome back, {callName(displayName)}</Text>
+            <Text style={styles.tagline}>Your digital wellness coach</Text>
           </View>
 
           {/* Tab Navigation — frosted glass blending with wallpaper */}
@@ -434,17 +555,13 @@ export default function HomeScreen() {
                 {tabs.map(tab => (
                   <AnimatedPressable
                     key={tab.id}
-                    style={[
-                      styles.tab,
-                      activeTab === tab.id && styles.tabActive
-                    ]}
+                    style={{ ...styles.tab, ...(activeTab === tab.id ? styles.tabActive : {}) }}
                     onPress={() => setActiveTab(tab.id)}
                   >
                   <View style={styles.tabInner}>
-                    <Text style={[
-                      styles.tabLabel,
-                      activeTab === tab.id && styles.tabLabelActive
-                    ]}>
+                    <Text
+                      style={{ ...styles.tabLabel, ...(activeTab === tab.id ? styles.tabLabelActive : {}) }}
+                    >
                       {tab.label}
                     </Text>
                   </View>
@@ -459,37 +576,21 @@ export default function HomeScreen() {
             style={styles.scrollView}
             contentContainerStyle={[
               styles.contentContainer,
-              Platform.OS !== 'ios' && styles.contentContainerWithTabBar,
+              { paddingBottom: 16 + insets.bottom + TAB_BAR_SCROLL_PADDING },
             ]}
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
+            }
           >
             {renderTabContent()}
           </ScrollView>
         </View>
-      </View>
+      </BackgroundSlideshow>
     </>
   );
 }
 
 const styles = StyleSheet.create({
-  backgroundWrap: {
-    flex: 1,
-    width: '100%',
-    height: '100%',
-  },
-  backgroundLayer: {
-    ...StyleSheet.absoluteFillObject,
-    width: '100%',
-    height: '100%',
-  },
-  backgroundImage: {
-    flex: 1,
-    width: '100%',
-    height: '100%',
-  },
-  overlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
-  },
   container: {
     flex: 1,
   },
@@ -498,9 +599,7 @@ const styles = StyleSheet.create({
   },
   contentContainer: {
     padding: 16,
-  },
-  contentContainerWithTabBar: {
-    paddingBottom: 100,
+    paddingBottom: 16,
   },
   tabContainerOuter: {
     marginHorizontal: 12,
@@ -591,10 +690,33 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#fff',
   },
+  spikeCelebrateWrap: {
+    alignItems: 'center',
+    marginBottom: 10,
+  },
   emptySectionText: {
     fontSize: 14,
     color: colors.textSecondary,
     marginTop: 8,
+  },
+  syncBanner: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    marginBottom: 8,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    borderRadius: 10,
+  },
+  syncBannerText: {
+    fontSize: 13,
+    color: colors.card,
+    textAlign: 'center',
+  },
+  emptyCard: {
+    backgroundColor: colors.card,
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.textSecondary + '35',
   },
   header: {
     paddingHorizontal: 16,
@@ -617,6 +739,14 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 2,
   },
+  tagline: {
+    fontSize: 13,
+    marginTop: 4,
+    color: 'rgba(255, 255, 255, 0.75)',
+    textShadowColor: 'rgba(0, 0, 0, 0.45)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
   section: {
     marginBottom: 24,
   },
@@ -624,17 +754,32 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: 'bold',
     color: 'rgba(255, 255, 255, 0.95)',
-    marginBottom: 12,
+    marginBottom: 6,
     textShadowColor: 'rgba(0, 0, 0, 0.5)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
+  },
+  sectionSubtitle: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: 'rgba(255, 255, 255, 0.72)',
+    marginBottom: 8,
+    textShadowColor: 'rgba(0, 0, 0, 0.45)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  badgeCountHint: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: 'rgba(255, 255, 255, 0.65)',
+    marginBottom: 10,
   },
   focusScoreCard: {
     backgroundColor: colors.card,
     borderRadius: 12,
     padding: 20,
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.08)',
     elevation: 2,
   },
@@ -646,6 +791,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 16,
+    flexShrink: 0,
+    marginTop: 2,
   },
   focusScoreValue: {
     fontSize: 28,
@@ -659,15 +806,21 @@ const styles = StyleSheet.create({
   focusScoreInfo: {
     flex: 1,
   },
-  focusScoreText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.text,
-    marginBottom: 4,
+  focusScoreInfoFlex: {
+    minWidth: 0,
+    flexShrink: 1,
   },
-  focusScoreDetail: {
-    fontSize: 14,
+  focusScoreText: {
+    fontSize: 15,
+    fontWeight: '400',
+    color: colors.text,
+    lineHeight: 22,
+    marginBottom: 8,
+  },
+  focusScoreSubDetail: {
+    fontSize: 12,
     color: colors.textSecondary,
+    opacity: 0.9,
   },
   insightCard: {
     backgroundColor: colors.highlight,
@@ -726,6 +879,18 @@ const styles = StyleSheet.create({
   statsGrid: {
     flexDirection: 'row',
     gap: 12,
+  },
+  statsGridColumn: {
+    gap: 12,
+  },
+  statsRow: {
+    flexDirection: 'row',
+    gap: 12,
+    alignItems: 'stretch',
+  },
+  statCell: {
+    flex: 1,
+    minWidth: 0,
   },
   chartContainer: {
     alignItems: 'center',

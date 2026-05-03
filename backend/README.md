@@ -140,5 +140,45 @@ See [../docs/TESTING_GUIDE.md](../docs/TESTING_GUIDE.md) for comprehensive testi
 
 See [../docs/DEPLOYMENT.md](../docs/DEPLOYMENT.md) for production deployment instructions.
 
+## Render deployment
+
+**Root Directory:** `backend`
+
+**Build Command:** `pip install -r requirements.txt`
+
+**Start Command:** `gunicorn app:app`
+
+On Render, set the web service **port** from the `PORT` environment variable if your plan requires it, for example:
+
+`gunicorn app:app --bind 0.0.0.0:$PORT`
+
+**Environment variables:**
+
+| Variable | Example |
+|----------|---------|
+| `DATABASE_URL` | Render Postgres **internal** database URL |
+| `SECRET_KEY` | Production secret |
+| `FLASK_ENV` | `production` |
+
+**Health check:** `GET /api/health`
+
+Render’s managed Postgres sometimes issues `DATABASE_URL` values that start with `postgres://`. The app normalizes these to `postgresql://` for SQLAlchemy.
+
+### Local smoke test (Gunicorn)
+
+```bash
+cd backend
+# Use the same Python environment where requirements.txt was installed, e.g.:
+#   source venv/bin/activate && gunicorn app:app --bind 127.0.0.1:8000
+gunicorn app:app --bind 127.0.0.1:8000
+```
+
+In another terminal:
+
+```bash
+curl http://127.0.0.1:8000/api/health
+```
+
+Expected: `{"status":"healthy", ...}` (includes a `timestamp` field).
 
 

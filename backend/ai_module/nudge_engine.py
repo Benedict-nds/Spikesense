@@ -44,14 +44,21 @@ class HistoryManager:
         self._cooldown = timedelta(hours=cooldown_hours)
         self._last_sent: Dict[Tuple[int, str], datetime] = {}
 
-    def can_send(self, user_id: int, pattern: str, now: datetime) -> bool:
+    def can_send(
+        self,
+        user_id: int,
+        pattern: str,
+        now: datetime,
+        cooldown_override: Optional[timedelta] = None,
+    ) -> bool:
         key = (user_id, pattern)
 
         last = self._last_sent.get(key)
         if last is None:
             return True
 
-        return now - last >= self._cooldown
+        cd = cooldown_override if cooldown_override is not None else self._cooldown
+        return now - last >= cd
 
     def mark_sent(self, user_id: int, pattern: str, now: datetime) -> None:
         self._last_sent[(user_id, pattern)] = now
@@ -133,7 +140,8 @@ class NudgeEngine:
         context: Dict[str, Any],
         previous_state: str,
         current_state: str,
-        focus_mode: str = "Personal"
+        focus_mode: str = "Personal",
+        nudge_cooldown_hours: Optional[float] = None,
     ) -> Optional[Dict[str, Any]]:
         """
         Generate a nudge only when a meaningful
@@ -142,6 +150,8 @@ class NudgeEngine:
         Example:
             focused → distracted
             distracted → overstimulated
+
+        nudge_cooldown_hours: when set, overrides HistoryManager default for this decision.
         """
 
         now = datetime.now(timezone.utc)
@@ -150,7 +160,23 @@ class NudgeEngine:
         if not self._is_transition_worthy(previous_state, current_state):
             return None
 
-        if not self._history.can_send(user_id, pattern, now):
+        cooldown_td: Optional[timedelta] = None
+        if nudge_cooldown_hours is not None:
+            try:
+                h = float(nudge_cooldown_hours)
+                if h > 0:
+                    cooldown_td = timedelta(hours=h)
+            except (TypeError, ValueError):
+                cooldown_td = None
+
+        if not self._history.can_send(user_id, pattern, now, cooldown_td):
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(
+                    "[NUDGE_COOLDOWN_EFFECTIVE] user_id=%s pattern=%s blocked cooldown_h=%s",
+                    user_id,
+                    pattern,
+                    nudge_cooldown_hours,
+                )
             return None
 
         templates = self._lookup_templates(

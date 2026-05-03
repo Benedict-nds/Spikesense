@@ -1,16 +1,28 @@
-
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Platform, Switch, Pressable, ImageBackground } from 'react-native';
+import React, { useState, useCallback } from 'react';
+import { View, Text, StyleSheet, ScrollView, Platform, Switch, Pressable, ImageBackground, Linking } from 'react-native';
+import Constants from 'expo-constants';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
+import { router } from 'expo-router';
 import { IconSymbol } from '@/components/IconSymbol';
 import { colors } from '@/styles/commonStyles';
 import { useAppUsageTracking } from '@/hooks/useAppUsageTracking';
-import { SpikeSenseMode } from '@/types/appUsage';
+import { useDisplayName } from '@/hooks/useOnboarding';
+import { callName, resetOnboardingForTesting } from '@/services/userProfile';
+import { openUsageAccessSettingsFromOnboarding } from '@/services/permissions';
+import { MODES, MODE_DESCRIPTIONS, MODE_LABELS, type Mode } from '@/constants/modes';
 
 export default function ProfileScreen() {
   const { nudgeConfig, updateNudgeConfig, modeConfig, setMode } = useAppUsageTracking();
+  const { displayName, refresh: refreshDisplayName } = useDisplayName();
   const [localConfig, setLocalConfig] = useState(nudgeConfig);
   const insets = useSafeAreaInsets();
+
+  useFocusEffect(
+    useCallback(() => {
+      void refreshDisplayName();
+    }, [refreshDisplayName])
+  );
 
   const handleToggle = (key: keyof typeof nudgeConfig) => {
     const newValue = !localConfig[key];
@@ -18,37 +30,16 @@ export default function ProfileScreen() {
     updateNudgeConfig({ [key]: newValue });
   };
 
-  const handleModeSelect = (mode: SpikeSenseMode) => {
+  const handleModeSelect = (mode: Mode) => {
     setMode(mode);
   };
 
-  const getModeDescription = (mode: SpikeSenseMode) => {
-    switch (mode) {
-      case 'supportive':
-        return 'Focus on awareness and education. Get insights about your habits without restrictions.';
-      case 'motivational':
-        return 'Gamified experience with badges, streaks, and challenges to keep you engaged.';
-      case 'restrictive':
-        return 'Adaptive restrictions with focus mode and gentle boundaries when needed.';
-      case 'balanced':
-        return 'Perfect balance of awareness, motivation, and light restrictions.';
-    }
+  const MODE_ICONS: Record<Mode, string> = {
+    focus: 'brain.head.profile',
+    balanced: 'scale.3d',
+    relax: 'moon.stars.fill',
+    auto: 'arrow.triangle.2.circlepath',
   };
-
-  const getModeIcon = (mode: SpikeSenseMode) => {
-    switch (mode) {
-      case 'supportive':
-        return 'lightbulb.fill';
-      case 'motivational':
-        return 'star.fill';
-      case 'restrictive':
-        return 'shield.fill';
-      case 'balanced':
-        return 'scale.3d';
-    }
-  };
-
-  const modes: SpikeSenseMode[] = ['supportive', 'motivational', 'restrictive', 'balanced'];
 
   return (
     <ImageBackground 
@@ -72,18 +63,18 @@ export default function ProfileScreen() {
           <View style={styles.avatarContainer}>
             <IconSymbol name="person.circle.fill" size={80} color={colors.primary} />
           </View>
-          <Text style={styles.name}>Student User</Text>
-          <Text style={styles.email}>student@university.edu</Text>
+          <Text style={styles.name}>{callName(displayName)}</Text>
+          <Text style={styles.email}>On-device profile for greetings</Text>
         </View>
 
         {/* Mode Selection */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Choose Your Mode</Text>
           <Text style={styles.sectionDescription}>
-            Select how restrictive you want SpikeSense to be
+            Select how you want SpikeSense to support you
           </Text>
           
-          {modes.map((mode) => (
+          {MODES.map((mode) => (
             <Pressable
               key={mode}
               style={[
@@ -98,7 +89,7 @@ export default function ProfileScreen() {
                   modeConfig.mode === mode && styles.modeIconContainerActive,
                 ]}>
                   <IconSymbol 
-                    name={getModeIcon(mode) as any} 
+                    name={MODE_ICONS[mode] as any} 
                     size={24} 
                     color={modeConfig.mode === mode ? colors.primary : colors.textSecondary} 
                   />
@@ -108,7 +99,7 @@ export default function ProfileScreen() {
                     styles.modeTitle,
                     modeConfig.mode === mode && styles.modeTitleActive,
                   ]}>
-                    {mode.charAt(0).toUpperCase() + mode.slice(1)}
+                    {MODE_LABELS[mode]}
                   </Text>
                   {modeConfig.mode === mode && (
                     <View style={styles.activeBadge}>
@@ -118,102 +109,52 @@ export default function ProfileScreen() {
                   )}
                 </View>
               </View>
-              <Text style={styles.modeDescription}>{getModeDescription(mode)}</Text>
+              <Text style={styles.modeDescription}>{MODE_DESCRIPTIONS[mode]}</Text>
             </Pressable>
           ))}
         </View>
 
-        {/* Mode Features */}
+        {/* Mode Details */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Active Features</Text>
-          
-          {modeConfig.supportive.enabled && (
-            <View style={styles.featureCard}>
-              <View style={styles.featureHeader}>
-                <IconSymbol name="lightbulb.fill" size={20} color={colors.accent} />
-                <Text style={styles.featureTitle}>Supportive Features</Text>
-              </View>
-              <View style={styles.featureList}>
-                {modeConfig.supportive.showInsights && (
-                  <View style={styles.featureItem}>
-                    <IconSymbol name="checkmark.circle.fill" size={16} color={colors.secondary} />
-                    <Text style={styles.featureText}>Context-based insights</Text>
-                  </View>
-                )}
-                {modeConfig.supportive.showEducationalTips && (
-                  <View style={styles.featureItem}>
-                    <IconSymbol name="checkmark.circle.fill" size={16} color={colors.secondary} />
-                    <Text style={styles.featureText}>Educational tips</Text>
-                  </View>
-                )}
-              </View>
-            </View>
-          )}
-
-          {modeConfig.motivational.enabled && (
-            <View style={styles.featureCard}>
-              <View style={styles.featureHeader}>
-                <IconSymbol name="star.fill" size={20} color={colors.primary} />
-                <Text style={styles.featureTitle}>Motivational Features</Text>
-              </View>
-              <View style={styles.featureList}>
-                {modeConfig.motivational.showBadges && (
-                  <View style={styles.featureItem}>
-                    <IconSymbol name="checkmark.circle.fill" size={16} color={colors.secondary} />
-                    <Text style={styles.featureText}>Badges & achievements</Text>
-                  </View>
-                )}
-                {modeConfig.motivational.showStreaks && (
-                  <View style={styles.featureItem}>
-                    <IconSymbol name="checkmark.circle.fill" size={16} color={colors.secondary} />
-                    <Text style={styles.featureText}>Streaks tracking</Text>
-                  </View>
-                )}
-                {modeConfig.motivational.showChallenges && (
-                  <View style={styles.featureItem}>
-                    <IconSymbol name="checkmark.circle.fill" size={16} color={colors.secondary} />
-                    <Text style={styles.featureText}>Daily challenges</Text>
-                  </View>
-                )}
-                {modeConfig.motivational.showFocusScore && (
-                  <View style={styles.featureItem}>
-                    <IconSymbol name="checkmark.circle.fill" size={16} color={colors.secondary} />
-                    <Text style={styles.featureText}>Focus score</Text>
-                  </View>
-                )}
-              </View>
-            </View>
-          )}
-
-          {modeConfig.restrictive.enabled && (
-            <View style={styles.featureCard}>
-              <View style={styles.featureHeader}>
-                <IconSymbol name="shield.fill" size={20} color={colors.accent} />
-                <Text style={styles.featureTitle}>Restrictive Features</Text>
-              </View>
-              <View style={styles.featureList}>
-                {modeConfig.restrictive.enableFocusMode && (
-                  <View style={styles.featureItem}>
-                    <IconSymbol name="checkmark.circle.fill" size={16} color={colors.secondary} />
-                    <Text style={styles.featureText}>Focus mode</Text>
-                  </View>
-                )}
-                {modeConfig.restrictive.pauseNotifications && (
-                  <View style={styles.featureItem}>
-                    <IconSymbol name="checkmark.circle.fill" size={16} color={colors.secondary} />
-                    <Text style={styles.featureText}>Pause notifications</Text>
-                  </View>
-                )}
-                {modeConfig.restrictive.showCooldowns && (
-                  <View style={styles.featureItem}>
-                    <IconSymbol name="checkmark.circle.fill" size={16} color={colors.secondary} />
-                    <Text style={styles.featureText}>Cooldown screens</Text>
-                  </View>
-                )}
-              </View>
-            </View>
-          )}
+          <Text style={styles.sectionTitle}>What this changes</Text>
+          <View style={styles.featureCard}>
+            <Text style={styles.modeDescription}>{MODE_DESCRIPTIONS[modeConfig.mode]}</Text>
+          </View>
         </View>
+
+        {Platform.OS === 'android' ? (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Floating Spike</Text>
+            <View style={styles.settingCard}>
+              <Text style={styles.settingLabel}>Enable floating Spike</Text>
+              <Text style={styles.settingDescription}>
+                Allow SpikeSense to show a small floating reminder over other apps during focus sessions.
+                Optional — system notifications still work if you do not enable &quot;Display over other apps&quot;.
+              </Text>
+              <Pressable
+                style={styles.overlaySettingsBtn}
+                onPress={() => {
+                  void Linking.openSettings();
+                }}
+              >
+                <Text style={styles.overlaySettingsBtnText}>Open Android settings</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.overlaySettingsBtn, styles.usageAccessBtn]}
+                onPress={() => {
+                  openUsageAccessSettingsFromOnboarding();
+                }}
+              >
+                <Text style={styles.overlaySettingsBtnText}>Open Usage Access settings</Text>
+              </Pressable>
+              <Text style={styles.overlayHint}>
+                In Settings, find {Constants.expoConfig?.android?.package ?? 'SpikeSense'} and turn on
+                &quot;Display over other apps&quot; (wording varies by device). Usage Access is under
+                Special app access → Usage access.
+              </Text>
+            </View>
+          </View>
+        ) : null}
 
         {/* Nudge Settings */}
         <View style={styles.section}>
@@ -298,6 +239,21 @@ export default function ProfileScreen() {
             </View>
           </View>
         </View>
+
+        {__DEV__ ? (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Testing</Text>
+            <Pressable
+              style={styles.devButton}
+              onPress={async () => {
+                await resetOnboardingForTesting();
+                router.replace('/onboarding');
+              }}
+            >
+              <Text style={styles.devButtonText}>Replay onboarding</Text>
+            </Pressable>
+          </View>
+        ) : null}
 
         {/* Privacy Notice */}
         <View style={styles.privacyNotice}>
@@ -520,6 +476,43 @@ const styles = StyleSheet.create({
     color: colors.text,
     lineHeight: 20,
     marginBottom: 16,
+  },
+  devButton: {
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.primary + '55',
+  },
+  devButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.primary,
+  },
+  overlaySettingsBtn: {
+    alignSelf: 'flex-start',
+    marginTop: 12,
+    backgroundColor: colors.primary,
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+    borderRadius: 12,
+  },
+  usageAccessBtn: {
+    marginTop: 10,
+    backgroundColor: colors.secondary,
+  },
+  overlaySettingsBtnText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  overlayHint: {
+    marginTop: 10,
+    fontSize: 12,
+    color: colors.textSecondary,
+    lineHeight: 18,
   },
   privacyNotice: {
     backgroundColor: 'rgba(235, 244, 255, 0.95)',

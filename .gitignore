@@ -30,6 +30,8 @@ yarn-error.*
 .natively/
 
 android/
+android/.gradle/
+android/app/build/
 ios/
 
 netlify.toml
@@ -38,4 +40,11 @@ netlify.toml
 pnpm-lock.yaml
 package-lock.json
 .env
+.env.local
 *.sqlite
+backend/env311/
+backend/__pycache__/
+backend/*.pyc
+backend/instance/
+backend/*.sqlite
+backend/*.db

@@ -1,0 +1,5 @@
+-- Run once against your SpikeSense DB if `nudges.explanation` is missing.
+-- SQLite:
+-- ALTER TABLE nudges ADD COLUMN explanation TEXT;
+-- PostgreSQL:
+-- ALTER TABLE nudges ADD COLUMN IF NOT EXISTS explanation TEXT;

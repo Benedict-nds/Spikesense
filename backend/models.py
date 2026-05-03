@@ -80,6 +80,12 @@ class User(db.Model):
         uselist=False
     )
 
+    focus_sessions = db.relationship(
+        "FocusSession",
+        backref="user",
+        lazy=True,
+    )
+
 
 # ==============================
 # USAGE LOG EVENTS
@@ -205,21 +211,22 @@ class DailyStats(db.Model):
         Prevents ghost switches and allows fast dashboard queries.
         """
 
-        # Update total usage
-        if event.duration:
-            self.total_usage_seconds += event.duration
+        duration = event.duration or 0
 
-        # Categorize usage
-        if event.category == "productivity":
-            self.productivity_seconds += event.duration
-        elif event.category == "entertainment":
-            self.entertainment_seconds += event.duration
-        elif event.category == "social":
-            self.social_seconds += event.duration
+        self.total_usage_seconds += duration
+
+        category = event.category or "other"
+
+        if category == "productivity":
+            self.productivity_seconds += duration
+        elif category == "social":
+            self.social_seconds += duration
+        elif category == "entertainment":
+            self.entertainment_seconds += duration
         else:
             # Everything that is not explicitly productivity / entertainment / social
             # is counted as "other" to keep category totals consistent.
-            self.other_seconds += event.duration
+            self.other_seconds += duration
 
         # Detect app switches
         if user.last_app_name is not None:
@@ -257,6 +264,12 @@ class Nudge(db.Model):
     message = db.Column(
         db.Text,
         nullable=False
+    )
+
+    # Short rule-based reason shown in the app ("Why this appeared")
+    explanation = db.Column(
+        db.Text,
+        nullable=True
     )
 
     severity = db.Column(
@@ -327,6 +340,41 @@ class UserThreshold(db.Model):
         default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc)
     )
+
+
+# ==============================
+# FOCUS SESSIONS (server-backed enforcement)
+# ==============================
+
+
+class FocusSession(db.Model):
+    """Active focus windows used for soft enforcement (client overlay, not OS blocking)."""
+
+    __tablename__ = "focus_sessions"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+
+    start_time = db.Column(
+        db.DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+    end_time = db.Column(db.DateTime, nullable=True)
+
+    duration_minutes = db.Column(db.Integer, nullable=False, default=25)
+
+    is_active = db.Column(db.Boolean, default=True, nullable=False)
+
+    violations_count = db.Column(db.Integer, default=0, nullable=False)
+
+    # Throttle repeated enforcement payloads for the same foreground app.
+    last_enforcement_at = db.Column(db.DateTime, nullable=True)
+    last_enforcement_app_name = db.Column(db.String(120), nullable=True)
+
+    __table_args__ = (db.Index("idx_focus_sessions_user_active", "user_id", "is_active"),)
 
 
 # ==============================

@@ -6,72 +6,61 @@
 import { Platform } from 'react-native';
 import * as Device from 'expo-device';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { apiService } from './api';
-
-// For Android, we'll use react-native-app-usage (requires native module)
-// For iOS, we'll use ScreenTime API (requires special entitlements)
-// This is a wrapper that handles both platforms
+import { getApiBaseUrl } from '@/constants/api';
+import { apiService, type UsageEventResponse } from './api';
+import { processUsageEventIntervention } from './interventionService';
+import {
+  getCurrentAppInfo,
+  requestUsagePermission,
+  isUntrackableAndroidPackage,
+  startNativeTrackingService,
+  stopNativeTrackingService,
+  type AndroidCategory,
+  type AndroidTrackedApp,
+} from './androidUsageService';
 
 interface AppUsageEvent {
   appName: string;
-  category: 'productivity' | 'social' | 'entertainment' | 'other';
+  category: AndroidCategory;
   durationSeconds: number;
   timestamp: string;
+  packageName: string;
 }
 
-interface AppCategory {
-  [key: string]: 'productivity' | 'social' | 'entertainment' | 'other';
-}
-
-// App category mapping (can be extended)
-const APP_CATEGORIES: AppCategory = {
-  // Productivity
-  'Notion': 'productivity',
-  'Google Docs': 'productivity',
-  'Microsoft Word': 'productivity',
-  'Slack': 'productivity',
-  'Gmail': 'productivity',
-  'Outlook': 'productivity',
-  'Calendar': 'productivity',
-  'Notes': 'productivity',
-  'Reminders': 'productivity',
-  'Todoist': 'productivity',
-  'Trello': 'productivity',
-  'Asana': 'productivity',
-  
-  // Social
-  'Instagram': 'social',
-  'Facebook': 'social',
-  'Twitter': 'social',
-  'WhatsApp': 'social',
-  'Messenger': 'social',
-  'Snapchat': 'social',
-  'TikTok': 'social',
-  'LinkedIn': 'social',
-  'Discord': 'social',
-  
-  // Entertainment
-  'YouTube': 'entertainment',
-  'Netflix': 'entertainment',
-  'Spotify': 'entertainment',
-  'Apple Music': 'entertainment',
-  'Twitch': 'entertainment',
-  'Reddit': 'entertainment',
-  'Pinterest': 'entertainment',
-  'Games': 'entertainment',
-  
-  // Default to 'other'
-};
+const STABLE_POLLS_REQUIRED = 2;
+const EMIT_DEDUPE_WINDOW_MS = 3000;
+const POLL_INTERVAL_MS = 3000;
 
 class AppUsageTracker {
   private userId: number | null = null;
   private deviceId: string | null = null;
   private isTracking: boolean = false;
-  private currentApp: string | null = null;
-  private appStartTime: Date | null = null;
-  private lastSwitchTime: Date | null = null;
+  /** Display name sent to the API (native label on Android). */
+  private lastTrackedAppName: string | null = null;
+  /** Package used for identity, switching, and filtering. */
+  private lastTrackedPackage: string | null = null;
+  private lastTrackedCategory: AndroidCategory = 'other';
+  private lastSwitchTime: number = Date.now();
   private usageBuffer: AppUsageEvent[] = [];
   private syncInterval: ReturnType<typeof setInterval> | null = null;
+  /** Chained timeouts so polls never overlap (avoids double emits). */
+  private trackingTimeout: ReturnType<typeof setTimeout> | null = null;
+  private hasUsagePermission: boolean = false;
+
+  private stableCandidatePackage: string | null = null;
+  private stableCandidateHits: number = 0;
+
+  /** When foreground is launcher/settings/self, we pause attributing time until a trackable app is back. */
+  private suspendedSince: number | null = null;
+
+  private lastEmittedAppName: string | null = null;
+  private lastEmittedPackage: string | null = null;
+  private lastEmittedDuration: number = -1;
+  private lastEmittedAt: number = 0;
+
+  private emitChain: Promise<void> = Promise.resolve();
+  /** Serialized switch work; `finally` always releases the next waiter. */
+  private switchMutex: Promise<void> = Promise.resolve();
 
   async initialize(): Promise<boolean> {
     try {
@@ -120,21 +109,22 @@ class AppUsageTracker {
 
   private async getDeviceId(): Promise<string> {
     let deviceId = await AsyncStorage.getItem('deviceId');
-    
+
     if (!deviceId) {
-      // Generate a device ID
-      deviceId = Platform.OS === 'ios' 
-        ? `ios_${Device.modelId || 'unknown'}_${Date.now()}`
-        : `android_${Device.modelId || 'unknown'}_${Date.now()}`;
-      
+      deviceId =
+        Platform.OS === 'ios'
+          ? `ios_${Device.modelId || 'unknown'}_${Date.now()}`
+          : `android_${Device.modelId || 'unknown'}_${Date.now()}`;
+
       await AsyncStorage.setItem('deviceId', deviceId);
     }
-    
+
     return deviceId;
   }
 
   async startTracking(): Promise<void> {
     if (this.isTracking) {
+      console.log('[TRACK][POLL_SKIPPED_ALREADY_RUNNING]');
       return;
     }
 
@@ -146,99 +136,345 @@ class AppUsageTracker {
     }
 
     this.isTracking = true;
-    
-    // Start periodic sync
+    this.lastSwitchTime = Date.now();
+
     this.syncInterval = window.setInterval(() => {
       this.syncUsageData();
-    }, 60000); // Sync every minute
+    }, 60000);
 
-    // For Android: Start native tracking
     if (Platform.OS === 'android') {
+      requestUsagePermission();
       this.startAndroidTracking();
-    } else {
-      // For iOS: Use AppState monitoring (limited)
-      this.startIOSTracking();
+      const started = await startNativeTrackingService(this.userId!, getApiBaseUrl());
+      console.log('[TRACK][NATIVE_SERVICE]', { started, userId: this.userId });
+      return;
     }
+
+    this.startIOSTracking();
+    console.log('[TRACK][START]', { pollIntervalMs: POLL_INTERVAL_MS });
+    this.scheduleNextTrackingPoll();
   }
 
   async stopTracking(): Promise<void> {
+    console.log('[TRACK][STOP]');
     this.isTracking = false;
-    
+
+    if (Platform.OS === 'android') {
+      await stopNativeTrackingService();
+    }
+
     if (this.syncInterval) {
       clearInterval(this.syncInterval);
       this.syncInterval = null;
     }
+    if (this.trackingTimeout) {
+      clearTimeout(this.trackingTimeout);
+      this.trackingTimeout = null;
+    }
 
-    // Flush remaining data
     await this.syncUsageData();
   }
 
+  private logPollState(): void {
+    console.log('[TRACK][STATE]', {
+      isTracking: this.isTracking,
+      userId: this.userId,
+      lastTrackedPackage: this.lastTrackedPackage,
+      suspendedSince: this.suspendedSince,
+      hasPollTimer: this.trackingTimeout != null,
+    });
+  }
+
+  /** Schedules one poll after `POLL_INTERVAL_MS`. Does not run if not tracking. */
+  private scheduleNextTrackingPoll(): void {
+    if (this.trackingTimeout) {
+      clearTimeout(this.trackingTimeout);
+      this.trackingTimeout = null;
+    }
+    if (!this.isTracking) {
+      return;
+    }
+    this.trackingTimeout = setTimeout(() => {
+      void this.runTrackingPoll();
+    }, POLL_INTERVAL_MS);
+  }
+
+  /**
+   * Single poll tick: switch + heartbeat. Always reschedules in `finally` while tracking is on.
+   */
+  private async runTrackingPoll(): Promise<void> {
+    if (!this.isTracking) {
+      return;
+    }
+
+    console.log('[TRACK][POLL_TICK]');
+    this.logPollState();
+
+    try {
+      await this.trackAppSwitch();
+      await this.trackAppUsageHeartbeat();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.log('[TRACK][POLL_ERROR]', msg, e);
+    } finally {
+      if (this.isTracking) {
+        console.log('[TRACK][POLL_RESCHEDULE]', { nextInMs: POLL_INTERVAL_MS });
+        this.scheduleNextTrackingPoll();
+      }
+    }
+  }
+
   private startAndroidTracking(): void {
-    // In a real implementation, this would use react-native-app-usage
-    // or similar native module to track foreground app changes
-    
-    // For now, we'll use AppState as a fallback
-    // This is a simplified version - real implementation requires native modules
-    console.log('Android tracking started (requires native module)');
+    console.log('Android tracking started (UsageStats + PackageManager)');
   }
 
   private startIOSTracking(): void {
-    // iOS has limitations - ScreenTime API requires special entitlements
-    // For now, we'll use AppState monitoring
     console.log('iOS tracking started (limited - requires ScreenTime entitlements)');
   }
 
-  async trackAppSwitch(appName: string): Promise<void> {
-    if (!this.isTracking) return;
-  
-    const now = new Date();
-  
-    // Ensure we have a valid userId
-    const userId = this.userId;
-    if (!userId || Number.isNaN(userId)) {
-      console.warn('[UsageTracker] Missing userId, skipping app switch log');
+  private resetStability(): void {
+    this.stableCandidatePackage = null;
+    this.stableCandidateHits = 0;
+  }
+
+  /** Untrackable foreground: never promote into stability or lastTracked. */
+  private onUntrackableForeground(packageName: string): void {
+    this.resetStability();
+    const pkg = (packageName || '').trim();
+    const isSelf = pkg.toLowerCase() === 'com.anonymous.natively';
+    if (isSelf) {
+      console.log('[TRACK][STATE_SKIPPED_SELF]', pkg);
+    }
+    console.log('[TRACK][IGNORED_PACKAGE]', pkg);
+    if (this.lastTrackedPackage != null && this.suspendedSince === null) {
+      this.suspendedSince = Date.now();
+    }
+  }
+
+  private advanceStableForeground(
+    packageName: string,
+  ): { stable: boolean; justBecameStable: boolean } {
+    if (this.stableCandidatePackage === packageName) {
+      this.stableCandidateHits += 1;
+    } else {
+      this.stableCandidatePackage = packageName;
+      this.stableCandidateHits = 1;
+    }
+
+    const stable = this.stableCandidateHits >= STABLE_POLLS_REQUIRED;
+    const justBecameStable = stable && this.stableCandidateHits === STABLE_POLLS_REQUIRED;
+    return { stable, justBecameStable };
+  }
+
+  /**
+   * After an ignored/suspended gap, close or resume the session before applying stability to the new poll.
+   */
+  private async resolveAfterSuspension(info: AndroidTrackedApp): Promise<void> {
+    if (this.suspendedSince === null) {
       return;
     }
-  
-    try {
-      // Log previous app session immediately to backend
-      if (this.currentApp && this.appStartTime) {
-        const durationMs = now.getTime() - this.appStartTime.getTime();
-        const durationSeconds = Math.floor(durationMs / 1000);
 
-        // Only record sessions that last at least 1 second
-        if (durationSeconds >= 1) {
-          const category = this.getAppCategory(this.currentApp);
+    const suspendedAt = this.suspendedSince;
 
-          const event: AppUsageEvent = {
-            appName: this.currentApp,
-            category,
-            durationSeconds,
-            timestamp: this.appStartTime.toISOString(),
-          };
-
-          /**
-           * Fire-and-forget API call
-           * We intentionally DO NOT await to avoid blocking tracking.
-           * On failure, we buffer the event for later sync.
-           */
-          apiService
-            .logEvent(userId, event.appName, event.category, event.durationSeconds)
-            .catch((error) => {
-              console.warn('[UsageTracker] logEvent failed, buffering event:', error?.message);
-              this.usageBuffer.push(event);
-            });
-        }
-      }
-    } catch (error: any) {
-      // Catch unexpected errors without crashing the app
-      console.warn('[UsageTracker] trackAppSwitch error:', error?.message);
+    if (this.lastTrackedPackage == null) {
+      this.suspendedSince = null;
+      return;
     }
-  
-    // Update tracker state
-    this.currentApp = appName;
-    this.appStartTime = now;
+
+    if (this.lastTrackedPackage === info.packageName) {
+      this.suspendedSince = null;
+      this.lastSwitchTime = Date.now();
+      this.resetStability();
+      return;
+    }
+
+    const duration = Math.max(1, Math.floor((suspendedAt - this.lastSwitchTime) / 1000));
+    await this.emitSession(
+      this.lastTrackedAppName!,
+      this.lastTrackedCategory,
+      duration,
+      this.lastTrackedPackage,
+    );
+
+    this.lastTrackedPackage = null;
+    this.lastTrackedAppName = null;
+    this.lastTrackedCategory = 'other';
+    this.suspendedSince = null;
+    this.lastSwitchTime = Date.now();
+    this.resetStability();
+  }
+
+  private async emitSession(
+    appName: string,
+    category: AndroidCategory,
+    durationSeconds: number,
+    packageName: string,
+  ): Promise<boolean> {
+    const previous = this.emitChain;
+    const next = (async (): Promise<boolean> => {
+      await previous.catch(() => undefined);
+      return this.emitSessionLocked(appName, category, durationSeconds, packageName);
+    })();
+    this.emitChain = next.then(() => undefined).catch(() => undefined);
+    return next;
+  }
+
+  private async emitSessionLocked(
+    appName: string,
+    category: AndroidCategory,
+    durationSeconds: number,
+    packageName: string,
+  ): Promise<boolean> {
+    if (!this.userId) {
+      return false;
+    }
+
+    const pkg = (packageName || '').trim();
+    if (!pkg || isUntrackableAndroidPackage(pkg)) {
+      if (pkg.toLowerCase() === 'com.anonymous.natively') {
+        console.log('[TRACK][STATE_SKIPPED_SELF]', pkg);
+      }
+      return false;
+    }
+
+    const d = Math.floor(Number(durationSeconds));
+    if (!Number.isFinite(d) || d < 5) {
+      return false;
+    }
+
+    console.log('[TRACK][EMIT_ATTEMPT]', { appName, category, duration: d, packageName: pkg });
+
+    const now = Date.now();
+    if (
+      this.lastEmittedAppName === appName &&
+      this.lastEmittedPackage === pkg &&
+      this.lastEmittedDuration === d &&
+      now - this.lastEmittedAt < EMIT_DEDUPE_WINDOW_MS
+    ) {
+      console.log('[TRACK][EMIT_SKIPPED_DUPLICATE]', { appName, packageName: pkg, duration: d });
+      return false;
+    }
+
+    try {
+      const res = await apiService.logEvent(this.userId, appName, category, d, { packageName: pkg });
+      const payload = res.success ? (res.data as UsageEventResponse | undefined) : undefined;
+      try {
+        await processUsageEventIntervention(payload, this.userId);
+      } catch {
+        if (__DEV__) console.warn('[appUsageTracker] processUsageEventIntervention failed');
+      }
+      this.lastEmittedAppName = appName;
+      this.lastEmittedPackage = pkg;
+      this.lastEmittedDuration = d;
+      this.lastEmittedAt = Date.now();
+      console.log('[TRACK][EMIT_SUCCESS]', { appName, duration: d });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async trackAppSwitch(): Promise<void> {
+    if (Platform.OS === 'android') {
+      return;
+    }
+
+    const previous = this.switchMutex;
+    let release!: () => void;
+    this.switchMutex = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await previous.catch(() => undefined);
+    try {
+      await this.executeTrackAppSwitch();
+    } finally {
+      release();
+    }
+  }
+
+  private async executeTrackAppSwitch(): Promise<void> {
+    if (!this.userId || !this.isTracking) return;
+
+    if (Platform.OS !== 'android') {
+      return;
+    }
+
+    const info = await getCurrentAppInfo();
+
+    if (info == null) {
+      if (!this.hasUsagePermission) {
+        console.warn('[Tracking] Usage permission not granted');
+      }
+      this.hasUsagePermission = false;
+      return;
+    }
+
+    if (info.ignored || isUntrackableAndroidPackage(info.packageName)) {
+      this.onUntrackableForeground(info.packageName);
+      return;
+    }
+
+    this.hasUsagePermission = true;
+
+    await this.resolveAfterSuspension(info);
+
+    const { packageName, appName, category } = info;
+
+    console.log('[TRACK][RAW_PACKAGE]', packageName);
+    console.log('[TRACK][APP_NAME]', appName);
+    console.log('[TRACK][CATEGORY]', category);
+
+    const { stable, justBecameStable } = this.advanceStableForeground(packageName);
+    if (!stable) {
+      return;
+    }
+    if (justBecameStable) {
+      console.log('[TRACK][STABLE_ACCEPTED]', packageName);
+    }
+
+    if (this.lastTrackedPackage === packageName) {
+      if (justBecameStable) {
+        console.log('[TRACK][DUPLICATE_SKIPPED]', packageName);
+      }
+      return;
+    }
+
+    if (!this.lastTrackedPackage) {
+      this.lastTrackedPackage = packageName;
+      this.lastTrackedAppName = appName;
+      this.lastTrackedCategory = category;
+      this.lastSwitchTime = Date.now();
+      this.stableCandidateHits = STABLE_POLLS_REQUIRED;
+      return;
+    }
+
+    const now = Date.now();
+    const duration = Math.max(1, Math.floor((now - this.lastSwitchTime) / 1000));
+
+    console.log('[SWITCH]', {
+      from: this.lastTrackedAppName,
+      fromPackage: this.lastTrackedPackage,
+      to: appName,
+      toPackage: packageName,
+      duration,
+    });
+
+    const prevPackage = this.lastTrackedPackage;
+    const prevName = this.lastTrackedAppName!;
+    const prevCat = this.lastTrackedCategory;
+
+    await this.emitSession(prevName, prevCat, duration, prevPackage);
+
+    this.lastTrackedPackage = packageName;
+    this.lastTrackedAppName = appName;
+    this.lastTrackedCategory = category;
     this.lastSwitchTime = now;
+  }
+
+  async trackAppUsageHeartbeat(): Promise<void> {
+    if (!this.userId || !this.isTracking) return;
+    if (Platform.OS !== 'android') return;
+    /* Android: UsageTrackingService posts sessions; legacy JS heartbeat removed. */
   }
 
   private async syncUsageData(): Promise<void> {
@@ -249,39 +485,19 @@ class AppUsageTracker {
     const eventsToSync = [...this.usageBuffer];
     this.usageBuffer = [];
 
-    // Sync buffered events (previous logEvent failures) to backend
     for (const event of eventsToSync) {
       try {
-        await apiService.logEvent(
-          this.userId!,
+        await this.emitSession(
           event.appName,
           event.category,
-          event.durationSeconds
+          event.durationSeconds,
+          event.packageName || '__buffer__',
         );
       } catch (error) {
         console.error('Failed to sync usage data:', error);
-        // Re-add to buffer if sync fails
         this.usageBuffer.push(event);
       }
     }
-  }
-
-  private getAppCategory(appName: string): 'productivity' | 'social' | 'entertainment' | 'other' {
-    // Try exact match first
-    if (APP_CATEGORIES[appName]) {
-      return APP_CATEGORIES[appName];
-    }
-
-    // Try case-insensitive match
-    const lowerName = appName.toLowerCase();
-    for (const [key, value] of Object.entries(APP_CATEGORIES)) {
-      if (key.toLowerCase() === lowerName) {
-        return value;
-      }
-    }
-
-    // Default to 'other'
-    return 'other';
   }
 
   /** Flush any buffered usage to the backend so daily stats are up to date. */
@@ -300,6 +516,3 @@ class AppUsageTracker {
 
 export const appUsageTracker = new AppUsageTracker();
 export default appUsageTracker;
-
-
-

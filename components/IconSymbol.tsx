@@ -78,6 +78,9 @@ const MAPPING = {
   "speaker.wave.2.fill": "volume-up",
   "speaker.slash.fill": "volume-off",
   "play.fill": "play-arrow",
+  "play.circle": "play-circle-outline",
+  "play.circle.fill": "play-circle",
+  "flag.fill": "flag",
   "pause.fill": "pause",
   "stop.fill": "stop",
 
@@ -132,13 +135,14 @@ const MAPPING = {
   "clock.fill": "access-time",
   "clock": "access-time",
   "calendar": "event",
+  "calendar.circle": "today",
   "timer": "timer",
 
   // User & Profile
   "person": "person",
   "person.fill": "person",
-  "person.2.fill": "group",
-  "person.2": "group",
+  "person.2.fill": "groups",
+  "person.2": "groups",
   "person.circle.fill": "account-circle",
   "person.circle": "account-circle",
   "person.crop.circle.fill": "account-circle",
@@ -154,14 +158,25 @@ const MAPPING = {
   "magnifyingglass": "search",
   "line.3.horizontal.decrease": "filter-list",
   "arrow.up.arrow.down": "sort",
+  "arrow.triangle.swap": "swap-horiz",
 
   // Visibility & Display
   "eye.fill": "visibility",
   "eye.slash.fill": "visibility-off",
   "lightbulb.fill": "lightbulb",
-  "moon.fill": "dark-mode",
+  "moon.fill": "nightlight",
+  "moon.stars.fill": "bedtime",
   "sun.max.fill": "light-mode",
-} as Partial<
+
+  // Profile / modes (SF Symbol names used in UI)
+  "brain.head.profile": "psychology",
+  "scale.3d": "balance",
+  "arrow.triangle.2.circlepath": "sync",
+  "leaf.fill": "eco",
+  "sparkles": "auto-awesome",
+  "cup.and.saucer.fill": "free-breakfast",
+  "iphone": "phone-iphone",
+} as unknown as Partial<
   Record<
     import("expo-symbols").SymbolViewProps["name"],
     React.ComponentProps<typeof MaterialIcons>["name"]
