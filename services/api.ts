@@ -15,6 +15,23 @@ interface ApiResponse<T> {
   error?: string;
 }
 
+function extractBootstrapUserId(data: unknown): number | undefined {
+  if (data == null || typeof data !== 'object') return undefined;
+  const o = data as Record<string, unknown>;
+  const u = o.user;
+  if (u != null && typeof u === 'object') {
+    const id = Number((u as Record<string, unknown>).id);
+    if (Number.isFinite(id) && id > 0) return id;
+  }
+  for (const key of ['id', 'user_id', 'userId']) {
+    if (o[key] != null) {
+      const id = Number(o[key]);
+      if (Number.isFinite(id) && id > 0) return id;
+    }
+  }
+  return undefined;
+}
+
 /** Server focus session row (GET/POST focus endpoints). */
 export type FocusSessionApi = {
   id: number;
@@ -117,12 +134,73 @@ class ApiService {
     }
   }
 
-  // User bootstrap: POST /api/users with { device_id }, returns user_id. Do not use GET /users.
-  async bootstrapUser(deviceId: string) {
-    return this.request<{ user_id: number }>('/users', {
+  /**
+   * POST /api/users — create user. Do not use GET /users.
+   * Accepts legacy string device_id or full payload (name + mode_preference).
+   */
+  async bootstrapUser(
+    payloadOrDeviceId:
+      | string
+      | { device_id: string; name?: string; mode_preference?: string }
+  ): Promise<{
+    success: boolean;
+    userId?: number;
+    user?: unknown;
+    error?: string;
+    raw?: unknown;
+  }> {
+    const payload =
+      typeof payloadOrDeviceId === 'string'
+        ? {
+            device_id: payloadOrDeviceId,
+            name: 'friend',
+            mode_preference: 'adaptive',
+          }
+        : {
+            device_id: payloadOrDeviceId.device_id,
+            name: (payloadOrDeviceId.name ?? 'friend').trim() || 'friend',
+            mode_preference: payloadOrDeviceId.mode_preference || 'adaptive',
+          };
+
+    const url = `${API_BASE_URL}/users`;
+    if (__DEV__) {
+      console.log('[FRONTEND][USER_BOOTSTRAP_REQUEST]', {
+        url,
+        hasDeviceId: Boolean(payload.device_id),
+        name: payload.name,
+      });
+    }
+
+    const res = await this.request<Record<string, unknown>>('/users', {
       method: 'POST',
-      body: JSON.stringify({ device_id: deviceId }),
+      body: JSON.stringify(payload),
     });
+
+    const raw = res.data;
+    if (!res.success) {
+      const err = res.error ?? 'Request failed';
+      if (__DEV__) {
+        console.log('[FRONTEND][USER_BOOTSTRAP_ERROR]', { error: err });
+      }
+      return { success: false, error: err, raw };
+    }
+
+    const userId = extractBootstrapUserId(raw);
+    if (userId == null || !Number.isFinite(userId)) {
+      if (__DEV__) {
+        console.log('[FRONTEND][USER_BOOTSTRAP_ERROR]', { error: 'missing_user_id_in_response' });
+      }
+      return { success: false, error: 'missing_user_id_in_response', raw };
+    }
+
+    if (__DEV__) {
+      console.log('[FRONTEND][USER_BOOTSTRAP_SUCCESS]', { userId });
+    }
+    const user =
+      raw && typeof raw === 'object' && (raw as Record<string, unknown>).user != null
+        ? (raw as Record<string, unknown>).user
+        : raw;
+    return { success: true, userId, user, raw };
   }
 
   /** PATCH user row — still supported for older clients */

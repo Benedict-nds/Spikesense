@@ -16,6 +16,8 @@ import {
 } from '@/types/appUsage';
 import { apiService } from '@/services/api';
 import { appUsageTracker } from '@/services/appUsageTracker';
+import { bootstrapUser } from '@/services/userBootstrap';
+import { getOnboardingCompleted, getStoredUserId } from '@/services/userProfile';
 import {
   subscribeFocusEnforcement,
   type FocusEnforcementPayload,
@@ -620,34 +622,52 @@ export function useAppUsageTracking() {
     setLoading(true);
     setError(null);
     try {
-      const trackerInitialized = await appUsageTracker.initialize();
-      const trackerUserId = trackerInitialized ? appUsageTracker.getUserId() : null;
+      await appUsageTracker.initialize();
 
-      if (trackerUserId) {
-        setUserId(trackerUserId);
-        await appUsageTracker.startTracking();
+      let trackerUserId = (await getStoredUserId()) ?? appUsageTracker.getUserId();
 
-        const thresholdsResult = await apiService.getUserThresholds(trackerUserId);
-        if (thresholdsResult.success && thresholdsResult.data?.thresholds) {
-          const thresholds = thresholdsResult.data.thresholds;
-          setNudgeConfig(prev => ({
-            ...prev,
-            switchThreshold: Number(thresholds.switch_threshold ?? prev.switchThreshold),
-            entertainmentThreshold: Number(thresholds.entertainment_threshold ?? prev.entertainmentThreshold),
-            breakInterval: Number(thresholds.break_interval ?? prev.breakInterval),
-          }));
+      if (trackerUserId == null) {
+        const completed = await getOnboardingCompleted();
+        if (completed) {
+          try {
+            trackerUserId = await bootstrapUser({});
+          } catch {
+            /* leave null */
+          }
         }
-
-        if (__DEV__) console.log('[FRONTEND][REFRESH]', { userId: trackerUserId, phase: 'initialize' });
-        await loadDailyStats(trackerUserId);
-        await loadUserModeFromBackend(trackerUserId);
-        await loadAchievements(trackerUserId);
-        await loadNudges(trackerUserId);
-        await loadWeeklyStats(trackerUserId);
-        await loadFocusStatus(trackerUserId);
-      } else {
-        setError('Unable to connect to backend.');
       }
+
+      if (trackerUserId == null) {
+        console.log('[FRONTEND][USER_ID_MISSING_SKIP_FETCH]');
+        setError('Unable to connect to backend.');
+        setLoading(false);
+        setIsInitialized(true);
+        return;
+      }
+
+      console.log('[FRONTEND][USER_ID_READY]', { userId: trackerUserId });
+
+      setUserId(trackerUserId);
+      await appUsageTracker.startTracking();
+
+      const thresholdsResult = await apiService.getUserThresholds(trackerUserId);
+      if (thresholdsResult.success && thresholdsResult.data?.thresholds) {
+        const thresholds = thresholdsResult.data.thresholds;
+        setNudgeConfig(prev => ({
+          ...prev,
+          switchThreshold: Number(thresholds.switch_threshold ?? prev.switchThreshold),
+          entertainmentThreshold: Number(thresholds.entertainment_threshold ?? prev.entertainmentThreshold),
+          breakInterval: Number(thresholds.break_interval ?? prev.breakInterval),
+        }));
+      }
+
+      if (__DEV__) console.log('[FRONTEND][REFRESH]', { userId: trackerUserId, phase: 'initialize' });
+      await loadDailyStats(trackerUserId);
+      await loadUserModeFromBackend(trackerUserId);
+      await loadAchievements(trackerUserId);
+      await loadNudges(trackerUserId);
+      await loadWeeklyStats(trackerUserId);
+      await loadFocusStatus(trackerUserId);
     } catch (err) {
       if (__DEV__) console.warn('[useAppUsageTracking] initialize failed:', err);
       setError('Unable to load data.');

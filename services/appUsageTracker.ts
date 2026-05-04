@@ -4,11 +4,11 @@
  */
 
 import { Platform } from 'react-native';
-import * as Device from 'expo-device';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getApiBaseUrl } from '@/constants/api';
 import { apiService, type UsageEventResponse } from './api';
 import { processUsageEventIntervention } from './interventionService';
+import { bootstrapUser as runUserBootstrap } from '@/services/userBootstrap';
+import { getOrCreateDeviceId, getStoredUserId } from '@/services/userProfile';
 import {
   getCurrentAppInfo,
   requestUsagePermission,
@@ -64,62 +64,42 @@ class AppUsageTracker {
 
   async initialize(): Promise<boolean> {
     try {
-      this.deviceId = await this.getDeviceId();
-
-      const isHealthy = await apiService.checkHealth();
-      if (!isHealthy) {
-        const storedUserId = await AsyncStorage.getItem('userId');
-        if (storedUserId) {
-          const id = parseInt(storedUserId, 10);
-          if (!Number.isNaN(id)) {
-            this.userId = id;
-            return true;
-          }
-        }
-        return false;
+      this.deviceId = await getOrCreateDeviceId();
+      const stored = await getStoredUserId();
+      if (stored != null) {
+        this.userId = stored;
       }
 
-      const userResult = await apiService.bootstrapUser(this.deviceId);
-      if (userResult.success && userResult.data?.user_id != null) {
-        this.userId = userResult.data.user_id;
-        await AsyncStorage.setItem('userId', this.userId.toString());
+      const isHealthy = await apiService.checkHealth();
+      if (this.userId != null) {
+        if (!isHealthy && __DEV__) {
+          console.log('[TRACK] backend unreachable; using cached userId');
+        }
         return true;
       }
 
-      const storedUserId = await AsyncStorage.getItem('userId');
-      if (storedUserId) {
-        this.userId = parseInt(storedUserId, 10);
-        if (!Number.isNaN(this.userId)) return true;
+      if (!isHealthy) {
+        return false;
       }
 
-      return false;
+      console.log('[TRACK][BOOTSTRAP_USER_FOR_TRACKING]');
+      try {
+        this.userId = await runUserBootstrap({});
+        console.log('[TRACK][START]', { userId: this.userId });
+        return true;
+      } catch (e) {
+        console.warn('[TRACK][BOOTSTRAP_FAILED]', e instanceof Error ? e.message : e);
+        return false;
+      }
     } catch (error) {
       console.error('Failed to initialize app usage tracker:', error);
-      const storedUserId = await AsyncStorage.getItem('userId');
-      if (storedUserId) {
-        const id = parseInt(storedUserId, 10);
-        if (!Number.isNaN(id)) {
-          this.userId = id;
-          return true;
-        }
+      const fallback = await getStoredUserId();
+      if (fallback != null) {
+        this.userId = fallback;
+        return true;
       }
       return false;
     }
-  }
-
-  private async getDeviceId(): Promise<string> {
-    let deviceId = await AsyncStorage.getItem('deviceId');
-
-    if (!deviceId) {
-      deviceId =
-        Platform.OS === 'ios'
-          ? `ios_${Device.modelId || 'unknown'}_${Date.now()}`
-          : `android_${Device.modelId || 'unknown'}_${Date.now()}`;
-
-      await AsyncStorage.setItem('deviceId', deviceId);
-    }
-
-    return deviceId;
   }
 
   async startTracking(): Promise<void> {

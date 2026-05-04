@@ -6,7 +6,7 @@ import BackgroundFrame from '@/components/BackgroundFrame';
 import { OnboardingLightShell } from '@/components/onboarding/OnboardingLightShell';
 import { OnboardingOrb } from '@/components/onboarding/OnboardingOrb';
 import { onboardingColors, onboardingSpace } from '@/constants/onboardingTheme';
-import { setDisplayName } from '@/services/userProfile';
+import { setStoredDisplayName } from '@/services/userProfile';
 
 export default function OnboardingName() {
   const [name, setName] = useState('');
@@ -14,7 +14,7 @@ export default function OnboardingName() {
   const valid = trimmed.length >= 1;
 
   const onNext = async () => {
-    await setDisplayName(name);
+    await setStoredDisplayName(name);
     router.push('/onboarding/how');
   };
 

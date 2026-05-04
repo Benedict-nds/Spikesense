@@ -17,7 +17,11 @@ import {
   OnboardingPrivacyNoteCard,
 } from '@/components/onboarding/OnboardingPermissionCard';
 import { onboardingColors, onboardingSpace } from '@/constants/onboardingTheme';
-import { setOnboardingCompleted } from '@/services/userProfile';
+import {
+  getStoredDisplayName,
+  setOnboardingCompleted,
+} from '@/services/userProfile';
+import { bootstrapUser } from '@/services/userBootstrap';
 import { requestNotificationPermissionIfAndroidOptional } from '@/services/nudgeNotifications';
 import {
   checkUsageAccessPermission,
@@ -27,6 +31,8 @@ import BackgroundFrame from '@/components/BackgroundFrame';
 
 export default function OnboardingPermissions() {
   const [usageAccessGranted, setUsageAccessGranted] = useState(Platform.OS !== 'android');
+  const [bootstrapError, setBootstrapError] = useState<string | null>(null);
+  const [finishing, setFinishing] = useState(false);
 
   const refreshUsageAccess = useCallback(async () => {
     if (Platform.OS !== 'android') {
@@ -68,18 +74,31 @@ export default function OnboardingPermissions() {
       );
       return;
     }
+    if (finishing) return;
+    setFinishing(true);
+    setBootstrapError(null);
     try {
+      console.log('[ONBOARDING][BOOTSTRAP_USER_BEFORE_COMPLETE]');
+      const storedName = (await getStoredDisplayName())?.trim();
+      const userId = await bootstrapUser({
+        displayName: storedName && storedName.length > 0 ? storedName : undefined,
+      });
+      console.log('[ONBOARDING][PERMISSIONS_COMPLETE]', { userId });
       await setOnboardingCompleted(true);
-    } catch {
-      /* still enter app */
+      router.replace('/(tabs)/(home)');
+    } catch (e) {
+      const err = e instanceof Error ? e.message : String(e);
+      console.log('[ONBOARDING][BOOTSTRAP_USER_FAILED]', { error: err });
+      setBootstrapError(
+        'Could not create your SpikeSense profile. Check your internet connection and try again.'
+      );
+    } finally {
+      setFinishing(false);
     }
-    if (__DEV__) {
-      console.log('[ONBOARDING][PERMISSIONS_COMPLETE]');
-    }
-    router.replace('/(tabs)/(home)');
   };
 
   const onPrimary = () => {
+    if (finishing) return;
     if (Platform.OS === 'ios') {
       void finish();
       return;
@@ -178,6 +197,7 @@ export default function OnboardingPermissions() {
       ) : null}
 
       <Text style={styles.footerHint}>{footerHelper}</Text>
+      {bootstrapError ? <Text style={styles.bootstrapError}>{bootstrapError}</Text> : null}
       {Platform.OS === 'android' ? (
         <Text style={styles.footerOptional}>
           Notifications and Floating Spike can be enabled later in Settings.
@@ -228,5 +248,12 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
     color: 'rgba(255,255,255,0.68)',
+  },
+  bootstrapError: {
+    marginTop: 12,
+    fontSize: 14,
+    lineHeight: 20,
+    color: '#FCA5A5',
+    fontWeight: '600',
   },
 });
